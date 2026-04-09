@@ -1,0 +1,29 @@
+[workspace]
+resolver = "3"
+members = ["server", "client-tui"]
+
+[workspace.package]
+description = "Server and Client for a simple text chat application"
+authors = ["evf (eliseuv@pm.me)"]
+
+[workspace.dependencies]
+
+# Argument parsing
+clap = { version = "4", features = ["derive"] }
+
+# Logging
+log = "0.4"
+
+# Async
+tokio = { version = "1", features = ["full"] }
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+# Time
+chrono = "0.4"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+ciborium = "0.2"

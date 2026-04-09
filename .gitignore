@@ -1,0 +1,10 @@
+# direnv
+.envrc
+/.direnv
+
+# Rust
+/target
+
+# Logs
+/logs
+*.log
