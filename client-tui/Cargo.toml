@@ -6,3 +6,27 @@ description.workspace = true
 authors.workspace = true
 
 [dependencies]
+
+# Chat server
+server = { path = "../server" }
+
+# CLI Arguments
+clap = { workspace = true }
+
+# TUI
+crossterm = "0.29"
+
+# Logging
+log = { workspace = true }
+log4rs = "1.4"
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Time
+chrono = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+ciborium = { workspace = true }
