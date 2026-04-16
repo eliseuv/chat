@@ -2,6 +2,8 @@
 
 This project implements a simple chat application with a server and a TUI client.
 
+![Chat Client](assets/screenshot.png)
+
 ## Backend
 
 The backend utilizes an asynchronous, non-blocking architecture powered by `tokio`. To allow fast concurrent interactions, the application separates the logic into two primary components communicating exclusively via asynchronous channels:
