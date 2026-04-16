@@ -12,7 +12,7 @@ root: .
 # Project hooks
 
 # Runs on project start, always
-on_project_start: export RUST_LOG=debug && export RUST_BACKTRACE=1 && cargo build
+on_project_start: export RUST_BACKTRACE=1 && cargo build
 
 # Run on project start, the first time
 # on_project_first_start: command
@@ -48,4 +48,6 @@ windows:
   - game:
       layout: even-horizontal
       panes:
-        - cargo run --bin main -- --address=127.0.0.1 -p 6969
+        - export RUST_LOG=debug && cargo run -p server --bin main -- --address=127.0.0.1 --port 6969
+        - cargo run -p client-tui -- --address=127.0.0.1 --port 6969
+        - cargo run -p client-tui -- --address=127.0.0.1 --port 6969

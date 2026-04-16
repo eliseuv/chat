@@ -1,22 +1,14 @@
 //! Remote
 //! Messages between local client thread and remote client
+//!
+//! This module handles the physical wire-level protocol. It defines the exact
+//! structures serialized into binary, dispatched over the network via length
+//! delimited frames, and explicitly decoded on the other side.
+//!
+//! It also provides the `RemotePacketCodec`, which implements `tokio_util::codec::Encoder`
+//! and `tokio_util::codec::Decoder` for asynchronous, non-blocking stream framing via CBOR.
 
-use chrono::{DateTime, Utc};
-use serde::Serialize;
-
-#[derive(Debug, Clone, Serialize)]
-pub struct RemoteMessage {
-    /// Timestamp
-    pub timestamp: i64,
-    /// Message content
-    pub content: String,
-}
-
-impl RemoteMessage {
-    pub fn new(content: String) -> Self {
-        Self {
-            timestamp: Utc::now().timestamp(),
-            content,
-        }
-    }
-}
+/// Codec structures
+pub mod codec;
+/// Packet structures
+pub mod packet;

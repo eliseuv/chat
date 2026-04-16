@@ -1,6 +1,6 @@
 [workspace]
-resolver = "3"
 members = ["server", "client-tui"]
+resolver = "3"
 
 [workspace.package]
 description = "Server and Client for a simple text chat application"
@@ -16,6 +16,8 @@ log = "0.4"
 
 # Async
 tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["codec"] }
+futures = "0.3"
 
 # Error handling
 anyhow = "1"

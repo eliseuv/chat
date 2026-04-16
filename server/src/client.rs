@@ -14,10 +14,12 @@ use tokio::{
 
 use anyhow::bail;
 use chrono::Utc;
+use futures::{SinkExt, StreamExt};
+use tokio_util::codec::Framed;
 
-use crate::protocol::{
-    ClientRequest, Destination, Message, MessageContent, Request, ServerResponse,
-};
+use crate::protocol;
+use crate::remote::codec::ServerCodec;
+use crate::remote::packet::{OutgoingMessage, OutgoingPacket, ServerMessage};
 
 /// Client ID counter
 static CLIENT_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -32,9 +34,9 @@ pub struct Client {
     /// Client stream
     pub stream: TcpStream,
     /// Command sender
-    pub cmd_tx: mpsc::Sender<ClientRequest>,
+    pub cmd_tx: mpsc::Sender<protocol::request::ClientRequest>,
     /// Broadcast receiver
-    pub bcast_rx: broadcast::Receiver<ServerResponse>,
+    pub bcast_rx: broadcast::Receiver<protocol::response::ServerResponse>,
 }
 
 impl Display for Client {
@@ -47,8 +49,8 @@ impl Client {
     pub fn new(
         addr: SocketAddr,
         stream: TcpStream,
-        cmd_tx: mpsc::Sender<ClientRequest>,
-        bcast_tx: &broadcast::Sender<ServerResponse>,
+        cmd_tx: mpsc::Sender<protocol::request::ClientRequest>,
+        bcast_tx: &broadcast::Sender<protocol::response::ServerResponse>,
     ) -> Self {
         Self {
             id: CLIENT_ID_COUNTER.fetch_add(1, atomic::Ordering::SeqCst),
@@ -61,9 +63,10 @@ impl Client {
 
     pub async fn send_request(
         &self,
-        request: Request,
-    ) -> Result<(), mpsc::error::SendError<ClientRequest>> {
-        let request = ClientRequest {
+        request: protocol::request::Request,
+    ) -> Result<(), mpsc::error::SendError<protocol::request::ClientRequest>> {
+        let request = protocol::request::ClientRequest {
+            client_id: self.id,
             addr: self.addr,
             timestamp: Utc::now(),
             request,
@@ -73,34 +76,101 @@ impl Client {
     }
 
     pub async fn run(mut self) -> Result<(), anyhow::Error> {
-        log::info!("[{self}] Started");
+        let client_name = self.to_string();
+        log::info!("[{client_name}] Started");
 
-        // let (mut reader, mut writer) = self.stream.split();
-
-        match self.send_request(Request::Connect).await {
+        match self.send_request(protocol::request::Request::Connect).await {
             Err(e) => bail!("Failed to send connect request: {e}"),
-            Ok(_) => log::info!("[{self}] Connected"),
+            Ok(_) => log::info!("[{client_name}] Connected"),
         }
 
-        // Mock sending a message from this client to the server core
-        let request = Request::Message(Message::new(
-            Destination::All,
-            MessageContent::Text(format!("Hello from {self}!")),
-        ));
-        if let Err(e) = self.send_request(request).await {
-            bail!("[{self}] unable to send request: {e}");
-        }
+        let mut framed = Framed::new(self.stream, ServerCodec::new());
 
-        // Loop listening to server
         loop {
-            match self.bcast_rx.recv().await {
-                Err(e) => bail!("Failed to receive broadcast: {e}"),
-                Ok(response) => log::info!("Received broadcast: '{response:?}'"),
+            tokio::select! {
+                // Read from network socket
+                result = framed.next() => {
+                    match result {
+                        Some(Ok(packet)) => {
+                            let request = protocol::request::ClientRequest {
+                                client_id: self.id,
+                                addr: self.addr,
+                                timestamp: Utc::now(),
+                                request: protocol::request::Request::Message(protocol::message::Message::new(
+                                    protocol::message::Destination::All,
+                                    packet.message,
+                                )),
+                            };
+                            if let Err(e) = self.cmd_tx.send(request).await {
+                                log::error!("[{client_name}] Failed to forward request to server core: {e}");
+                                break;
+                            }
+                        }
+                        Some(Err(e)) => {
+                            log::error!("[{client_name}] Stream error: {e}");
+                            break;
+                        }
+                        None => {
+                            log::info!("[{client_name}] Connection closed by client");
+                            break;
+                        }
+                    }
+                }
+
+                // Read from broadcast channel
+                result = self.bcast_rx.recv() => {
+                    match result {
+                        Ok(server_response) => {
+                            let out_msg = match server_response.response {
+                                protocol::response::Response::Welcome(user_id) => {
+                                    if user_id == self.id {
+                                        OutgoingMessage::ServerMessage(ServerMessage::Welcome(user_id))
+                                    } else {
+                                        continue;
+                                    }
+                                }
+                                protocol::response::Response::Disconnect(_) => {
+                                    OutgoingMessage::ServerMessage(ServerMessage::Disconnect)
+                                }
+                                protocol::response::Response::Message { sender: _, sender_id, content } => {
+                                    OutgoingMessage::PeerMessage {
+                                        author_id: sender_id,
+                                        content,
+                                    }
+                                }
+                            };
+
+                            let out_packet = OutgoingPacket {
+                                timestamp: server_response.timestamp.timestamp(),
+                                message: out_msg,
+                            };
+
+                            if let Err(e) = framed.send(out_packet).await {
+                                log::error!("[{client_name}] Failed to send packet to client: {e}");
+                                break;
+                            }
+                        }
+                        Err(broadcast::error::RecvError::Lagged(n)) => {
+                            log::warn!("[{client_name}] Broadcast receiver lagged by {n} messages");
+                        }
+                        Err(broadcast::error::RecvError::Closed) => {
+                            log::info!("[{client_name}] Broadcast channel closed");
+                            break;
+                        }
+                    }
+                }
             }
         }
 
-        // A complete implementation would loop indefinitely here utilizing `tokio::select!`
-        // to concurrently read from `self.socket` (sending that data to `self.cmd_tx`),
-        // while also reading from `self.bcast_rx` (and writing that data to `self.socket`).
+        // Notify core that we disconnected
+        let disconnect_req = protocol::request::ClientRequest {
+            client_id: self.id,
+            addr: self.addr,
+            timestamp: Utc::now(),
+            request: protocol::request::Request::Disconnect,
+        };
+        let _ = self.cmd_tx.send(disconnect_req).await;
+
+        Ok(())
     }
 }

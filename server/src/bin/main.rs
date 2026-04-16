@@ -1,7 +1,7 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use clap::Parser;
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
 
 use server::{client::Client, server::Server};
 
@@ -37,19 +37,6 @@ async fn main() {
     let (server, cmd_tx, bcast_tx) = Server::new();
     tokio::spawn(async move {
         server.run().await;
-    });
-
-    // Spawn mock clients
-    let mock_socket = socket;
-    tokio::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        for i in 1..=5 {
-            log::info!("[MockSpawner] Spawning mock client {}", i);
-            if let Err(e) = TcpStream::connect(mock_socket).await {
-                log::error!("[MockSpawner] Client {} failed to connect: {}", i, e);
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        }
     });
 
     // Listen for incoming connections

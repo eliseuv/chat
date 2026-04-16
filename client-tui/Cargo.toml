@@ -10,11 +10,16 @@ authors.workspace = true
 # Chat server
 server = { path = "../server" }
 
+# Async
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+futures = { workspace = true }
+
 # CLI Arguments
 clap = { workspace = true }
 
 # TUI
-crossterm = "0.29"
+crossterm = { version = "0.29", features = ["event-stream"] }
 
 # Logging
 log = { workspace = true }

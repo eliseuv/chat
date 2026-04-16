@@ -3,7 +3,7 @@
 
 use tokio::sync::{broadcast, mpsc};
 
-use crate::protocol::{ClientRequest, Request, Response, ServerResponse};
+use crate::protocol;
 
 /// Channel size
 pub const CHANNEL_CAPACITY: usize = 32;
@@ -12,16 +12,16 @@ pub const CHANNEL_CAPACITY: usize = 32;
 #[derive(Debug)]
 pub struct Server {
     /// Request receiver
-    req_rx: mpsc::Receiver<ClientRequest>,
+    req_rx: mpsc::Receiver<protocol::request::ClientRequest>,
     /// Broadcast sender
-    bcast_tx: broadcast::Sender<ServerResponse>,
+    bcast_tx: broadcast::Sender<protocol::response::ServerResponse>,
 }
 
 impl Server {
     pub fn new() -> (
         Self,
-        mpsc::Sender<ClientRequest>,
-        broadcast::Sender<ServerResponse>,
+        mpsc::Sender<protocol::request::ClientRequest>,
+        broadcast::Sender<protocol::response::ServerResponse>,
     ) {
         // MPSC Channel: Clients -> Server
         let (cmd_tx, cmd_rx) = mpsc::channel(CHANNEL_CAPACITY);
@@ -43,26 +43,39 @@ impl Server {
         log::info!("[Server Core] Task started");
 
         // Listen for incoming commands from all workers indefinitely
-        while let Some(ClientRequest {
-            addr,
-            timestamp,
-            request,
-        }) = self.req_rx.recv().await
-        {
-            match request {
-                Request::Connect => {}
-                Request::Disconnect => {}
-                Request::Message(msg) => {
-                    let response = Response::Message {
-                        sender: addr,
-                        content: msg.content,
-                    };
-                    let server_response = ServerResponse {
-                        timestamp,
-                        response,
-                    };
-                    let _ = self.bcast_tx.send(server_response);
+        loop {
+            tokio::select! {
+                Some(protocol::request::ClientRequest {
+                    client_id,
+                    addr,
+                    timestamp,
+                    request,
+                }) = self.req_rx.recv() => {
+                    match request {
+                        protocol::request::Request::Connect => {
+                            let response = protocol::response::Response::Welcome(client_id);
+                            let server_response = protocol::response::ServerResponse {
+                                timestamp,
+                                response,
+                            };
+                            let _ = self.bcast_tx.send(server_response);
+                        }
+                        protocol::request::Request::Disconnect => {}
+                        protocol::request::Request::Message(msg) => {
+                            let response = protocol::response::Response::Message {
+                                sender: addr,
+                                sender_id: client_id,
+                                content: msg.content,
+                            };
+                            let server_response = protocol::response::ServerResponse {
+                                timestamp,
+                                response,
+                            };
+                            let _ = self.bcast_tx.send(server_response);
+                        }
+                    }
                 }
+                else => break,
             }
         }
     }
