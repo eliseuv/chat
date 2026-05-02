@@ -8,7 +8,8 @@
 //! It also provides the `RemotePacketCodec`, which implements `tokio_util::codec::Encoder`
 //! and `tokio_util::codec::Decoder` for asynchronous, non-blocking stream framing via CBOR.
 
-/// Codec structures
-pub mod codec;
 /// Packet structures
 pub mod packet;
+
+/// Codec structures
+pub mod codec;

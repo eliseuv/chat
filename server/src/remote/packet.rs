@@ -47,7 +47,7 @@ impl OutgoingPacket {
     /// Instantiates a new packet attached to the current UTC Unix timestamp.
     pub fn new(message: OutgoingMessage) -> Self {
         Self {
-            timestamp: Utc::now().timestamp(),
+            timestamp: Utc::now().timestamp_millis(),
             message,
         }
     }
@@ -59,7 +59,7 @@ impl OutgoingPacket {
 /// into the server's routing core.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IncomingPacket {
-    /// UTC timestamp indicating when the client originally pushed this data.
+    /// Untrusted. Just used for roundtrip time measurement.
     pub timestamp: i64,
     /// The intended payload (text message, etc.) the client wishes to send.
     pub message: protocol::message::MessageContent,

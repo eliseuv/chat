@@ -6,7 +6,7 @@ use tokio::net::TcpListener;
 use server::{client::Client, server::Server};
 
 /// Default server address
-const DEFAULT_SERVER_ADDRESS: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+const DEFAULT_SERVER_ADDRESS: IpAddr = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
 /// Default server port
 const DEFAULT_SERVER_PORT: u16 = 6969;
 

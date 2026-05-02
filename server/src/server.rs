@@ -3,7 +3,11 @@
 
 use tokio::sync::{broadcast, mpsc};
 
-use crate::protocol;
+use crate::protocol::{
+    message::Message,
+    request::{ClientRequest, Request},
+    response::{Response, ResponseType},
+};
 
 /// Channel size
 pub const CHANNEL_CAPACITY: usize = 32;
@@ -12,16 +16,16 @@ pub const CHANNEL_CAPACITY: usize = 32;
 #[derive(Debug)]
 pub struct Server {
     /// Request receiver
-    req_rx: mpsc::Receiver<protocol::request::ClientRequest>,
+    req_rx: mpsc::Receiver<ClientRequest>,
     /// Broadcast sender
-    bcast_tx: broadcast::Sender<protocol::response::ServerResponse>,
+    bcast_tx: broadcast::Sender<Response>,
 }
 
 impl Server {
     pub fn new() -> (
         Self,
-        mpsc::Sender<protocol::request::ClientRequest>,
-        broadcast::Sender<protocol::response::ServerResponse>,
+        mpsc::Sender<ClientRequest>,
+        broadcast::Sender<Response>,
     ) {
         // MPSC Channel: Clients -> Server
         let (cmd_tx, cmd_rx) = mpsc::channel(CHANNEL_CAPACITY);
@@ -45,33 +49,31 @@ impl Server {
         // Listen for incoming commands from all workers indefinitely
         loop {
             tokio::select! {
-                Some(protocol::request::ClientRequest {
+                Some(ClientRequest {
                     client_id,
                     addr,
-                    timestamp,
+                    timestamp: _, // TODO: process timestamp
                     request,
                 }) = self.req_rx.recv() => {
                     match request {
-                        protocol::request::Request::Connect => {
-                            let response = protocol::response::Response::Welcome(client_id);
-                            let server_response = protocol::response::ServerResponse {
-                                timestamp,
-                                response,
-                            };
-                            let _ = self.bcast_tx.send(server_response);
+
+                        Request::Connect => {
+                            // For now we accept all connection requests
+                            let response = Response::new(ResponseType::Welcome(client_id));
+                            let _ = self.bcast_tx.send(response);
                         }
-                        protocol::request::Request::Disconnect => {}
-                        protocol::request::Request::Message(msg) => {
-                            let response = protocol::response::Response::Message {
+
+                        Request::Disconnect => {
+                            // TODO: Gracefully disconnect the client
+                        }
+
+                        Request::Message(Message { content, .. }) => {
+                            let response = Response::new(ResponseType::Message {
                                 sender: addr,
                                 sender_id: client_id,
-                                content: msg.content,
-                            };
-                            let server_response = protocol::response::ServerResponse {
-                                timestamp,
-                                response,
-                            };
-                            let _ = self.bcast_tx.send(server_response);
+                                content,
+                            });
+                            let _ = self.bcast_tx.send(response);
                         }
                     }
                 }

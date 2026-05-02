@@ -1,13 +1,13 @@
-use std::net::SocketAddr;
-use chrono::{DateTime, Utc};
 use super::message::{Destination, MessageContent};
+use chrono::{DateTime, Utc};
+use std::net::SocketAddr;
 
 /// A top-level logical response from the server directed towards connected clients.
-/// 
-/// This enum groups together different types of instructions and information 
+///
+/// This enum groups together different types of instructions and information
 /// that the server pushes downwards to the clients, such as system events or peer data.
 #[derive(Debug, Clone)]
-pub enum Response {
+pub enum ResponseType {
     /// Indicates that the connection was successfully registered.
     /// Provides the client with its assigned user id.
     Welcome(u64),
@@ -26,9 +26,18 @@ pub enum Response {
 
 /// An envelope wrapping a [`Response`] with server-side chronological data.
 #[derive(Debug, Clone)]
-pub struct ServerResponse {
+pub struct Response {
     /// The exact server-side time when this response was generated.
     pub timestamp: DateTime<Utc>,
     /// The inner response payload.
-    pub response: Response,
+    pub response_type: ResponseType,
+}
+
+impl Response {
+    pub fn new(response_type: ResponseType) -> Self {
+        Self {
+            timestamp: Utc::now(),
+            response_type,
+        }
+    }
 }

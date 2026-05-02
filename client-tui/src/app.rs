@@ -1,14 +1,14 @@
-use std::io;
 use anyhow::Context;
 use chrono::{DateTime, Utc};
 use crossterm::terminal;
 use futures::{SinkExt, StreamExt};
+use std::io;
 use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
 
-use server::{protocol, remote};
 use crate::history::{ChatHistory, ReceivedMessage};
 use crate::ui::ChatInterface;
+use server::{protocol, remote};
 
 #[derive(Debug)]
 pub enum State {
@@ -18,23 +18,23 @@ pub enum State {
 
 /// Chat Application
 pub struct ChatApp {
+    state: State,
     framed_connection: Framed<TcpStream, remote::codec::ClientCodec>,
     input_buffer: String,
-    state: State,
-    interface: ChatInterface<io::Stdout>,
     history: ChatHistory,
+    interface: ChatInterface<io::Stdout>,
 }
 
 impl ChatApp {
     pub fn new(stream: TcpStream) -> Self {
         Self {
+            state: State::Default,
             framed_connection: Framed::new(stream, remote::codec::ClientCodec::new()),
             input_buffer: String::new(),
-            state: State::Default,
-            interface: ChatInterface::new(io::stdout()),
             history: ChatHistory {
                 messages: Vec::new(),
             },
+            interface: ChatInterface::new(io::stdout()),
         }
     }
 
@@ -43,7 +43,7 @@ impl ChatApp {
         message: protocol::message::MessageContent,
     ) -> anyhow::Result<()> {
         let packet = remote::packet::IncomingPacket {
-            timestamp: Utc::now().timestamp(),
+            timestamp: Utc::now().timestamp_millis(),
             message,
         };
         self.framed_connection
@@ -132,8 +132,11 @@ impl ChatApp {
                         result = self.framed_connection.next() => {
                             match result {
                                 Some(Ok(packet)) => {
+                                    let rtt = Utc::now().timestamp_millis() - packet.timestamp;
+                                    log::debug!("Roundtrip time: {rtt}ms");
+
                                     self.history.messages.push(ReceivedMessage {
-                                        datetime: DateTime::<Utc>::from_timestamp_secs(packet.timestamp)
+                                        datetime: DateTime::<Utc>::from_timestamp_millis(packet.timestamp)
                                             .context("Unable to parse timestamp")?,
                                         message: packet.message,
                                     });

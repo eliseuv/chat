@@ -8,7 +8,9 @@
 
 /// Message structures
 pub mod message;
+
 /// Request structures
 pub mod request;
+
 /// Response structures
 pub mod response;

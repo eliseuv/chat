@@ -1,15 +1,18 @@
+use super::packet::{IncomingPacket, OutgoingPacket};
 use futures::io;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use std::marker::PhantomData;
 use tokio_util::{
     bytes::Bytes,
     codec::{Decoder, Encoder, LengthDelimitedCodec},
 };
-use super::packet::{IncomingPacket, OutgoingPacket};
+
+/// Maximum frame length to avoid DoS by OOM
+const MAX_FRAME_LENGTH: usize = 1024 * 1024;
 
 /// A bipartite serialization/deserialization codec for framing TCP streams.
 ///
-/// This codec transforms raw asynchronous byte streams into discrete application-level 
+/// This codec transforms raw asynchronous byte streams into discrete application-level
 /// generic packets utilizing CBOR (Concise Binary Object Representation) format under the hood.
 /// The framing is managed by an underlying `LengthDelimitedCodec` which safely chunks the bytes.
 ///
@@ -26,8 +29,11 @@ pub struct RemotePacketCodec<In, Out> {
 impl<In, Out> RemotePacketCodec<In, Out> {
     /// Creates a fresh codec engine equipped with a default length-delimited framer.
     pub fn new() -> Self {
+        let framer = LengthDelimitedCodec::builder()
+            .max_frame_length(MAX_FRAME_LENGTH)
+            .new_codec();
         Self {
-            framer: LengthDelimitedCodec::new(),
+            framer,
             _phantom: PhantomData,
         }
     }
@@ -92,7 +98,7 @@ where
 }
 
 /// The designated codec specialization utilized by the Server.
-/// 
+///
 /// - **Decodes**: `IncomingPacket` (Client claims traversing upwards)
 /// - **Encodes**: `OutgoingPacket` (Server notifications pushing downwards)
 pub type ServerCodec = RemotePacketCodec<IncomingPacket, OutgoingPacket>;
