@@ -42,8 +42,8 @@ This document describes the messaging protocol used between our client applicati
 ### Architecture
 
 The networking interface relies on two distinct code boundaries:
-- `protocol.rs`: Logical constructs encapsulating application interactions (e.g., `Message`, `Destination`, `Request`).
-- `remote.rs`: Concrete wire formats (`IncomingPacket`, `OutgoingPacket`) and streaming utilities (`RemotePacketCodec`).
+- `protocol.rs`: Logical constructs encapsulating application interactions (e.g., `ChatMessage`, `MessageDestination`, `Request`).
+- `remote.rs`: Concrete wire formats (`ClientRemotePacket`, `ServerRemotePacket`) and streaming utilities (`RemotePacketCodec`).
 
 #### Message Flow Architecture
 
@@ -70,14 +70,14 @@ graph TD
     end
 
     CA -->|Generates text| CE
-    CE -->|Encodes IncomingPacket<br>CBOR| TCP
+    CE -->|Encodes ClientRemotePacket<br>CBOR| TCP
     TCP -->|Length-Delimited Bytes| SD
-    SD -->|Yields IncomingPacket| SA
+    SD -->|Yields ClientRemotePacket| SA
 
-    SA -->|Wraps in PeerMessage/ServerMessage| SE
-    SE -->|Encodes OutgoingPacket<br>CBOR| TCP
+    SA -->|Wraps in ServerMessage| SE
+    SE -->|Encodes ServerRemotePacket<br>CBOR| TCP
     TCP -->|Length-Delimited Bytes| CD
-    CD -->|Yields OutgoingPacket| CA
+    CD -->|Yields ServerRemotePacket| CA
 ```
 
 ### Protocol Specifications
@@ -92,8 +92,8 @@ A single unified packet codec implements the transformation between the stream a
 ```rust
 pub struct RemotePacketCodec<In, Out> { ... }
 ```
-- **ServerCodec**: Decodes `IncomingPacket` & Encodes `OutgoingPacket`.
-- **ClientCodec**: Decodes `OutgoingPacket` & Encodes `IncomingPacket`.
+- **ServerCodec**: Decodes `ClientRemotePacket` & Encodes `ServerRemotePacket`.
+- **ClientCodec**: Decodes `ServerRemotePacket` & Encodes `ClientRemotePacket`.
 
 #### Message Data Structures
 To deal with state, timeframes, and peer isolation, primitive values (`MessageContent`) are progressively bundled within protective envelopes when traversing over the network wire.
@@ -103,27 +103,28 @@ The payloads are unified to simplify handling inside the isolated client process
 
 ```mermaid
 classDiagram
-    class OutgoingPacket {
+    class ServerRemotePacket {
       +i64 timestamp
-      +OutgoingMessage message
-    }
-    class OutgoingMessage {
-      <<enumeration>>
-      ServerMessage
-      PeerMessage
+      +ServerMessage message
     }
     class ServerMessage {
+      <<enumeration>>
+      Command
+      Chat
+    }
+    class ServerCommand {
       <<enumeration>>
       Welcome(u64)
       Disconnect
     }
-    class PeerMessage {
+    class ChatMessage {
       +u64 author_id
+      +MessageDestination destination
       +MessageContent content
     }
-    OutgoingPacket *-- OutgoingMessage
-    OutgoingMessage o-- ServerMessage
-    OutgoingMessage o-- PeerMessage
+    ServerRemotePacket *-- ServerMessage
+    ServerMessage o-- ServerCommand
+    ServerMessage o-- ChatMessage
 ```
 
 ##### Client-to-Server Publishing
@@ -131,25 +132,24 @@ Clients have a constrained communication pipeline, only capable of pushing base 
 
 ```mermaid
 classDiagram
-    class IncomingPacket {
+    class ClientRemotePacket {
       +i64 timestamp
-      +MessageContent message
+      +MessageContent message_content
     }
     class MessageContent {
         <<enumeration>>
         Text(String)
-        Binary(Vec<u8>)
     }
-    IncomingPacket *-- MessageContent
+    ClientRemotePacket *-- MessageContent
 ```
 
 ### Typical Connection Lifecycle
 
 1. **Bootstrap Handshake**: A client establishes a raw TCP loop.
-2. **Acceptance Phase**: The listener accepts the socket. The new peer gets registered on the server and is streamed an initial `OutgoingPacket` encompassing a `ServerMessage::Welcome(u64)` which assigns the client its sequential numerical ID.
+2. **Acceptance Phase**: The listener accepts the socket. The new peer gets registered on the server and is streamed an initial `ServerRemotePacket` encompassing a `ServerCommand::Welcome(u64)` which assigns the client its sequential numerical ID.
 3. **Transmission Feed**:
-   - The user inputs text -> The application wraps it in `IncomingPacket` -> Passes to Encoder.
+   - The user inputs text -> The application wraps it in `ClientRemotePacket` -> Passes to Encoder.
    - Converts to CBOR, prefixes byte length frame, writes to socket.
    - The Server Decoder extracts the payload length and reconstructs the CBOR map synchronously.
-   - The Server Router extracts the content, assigns the specific sender's `author_id`, constructs an `OutgoingMessage::PeerMessage`, serializes it inside an `OutgoingPacket`, and broadcasts it downstream to valid clients.
-4. **Shutdown Iteration**: Either side triggers the close pipeline, eventually culminating in `OutgoingPacket(ServerMessage::Disconnect)`.
+   - The Server Router extracts the content, assigns the specific sender's `author_id`, constructs a `ChatMessage` wrapped in a `ServerMessage::Chat`, serializes it inside a `ServerRemotePacket`, and broadcasts it downstream to valid clients.
+4. **Shutdown Iteration**: Either side triggers the close pipeline, eventually culminating in `ServerRemotePacket` with a `ServerCommand::Disconnect`.
