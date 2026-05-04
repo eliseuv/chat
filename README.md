@@ -20,15 +20,19 @@ Whenever a user establishes a new TCP connection, the system immediately offload
 - **Downstream (Server -> Client)**: The task holds a subscription receiver to the core's broadcast channel. Whenever a message is centrally routed, this worker pulls it, serializes it to binary, and streams it physically over the socket.
 - These operations happen simultaneously and reactively by utilizing `tokio::select!` loops—meaning an unresponsive client processing backlogs will not stall the overarching core application.
 
-## TODO
+## Future Features
 
-- [ ] Usernames
-- [ ] Server side chat history
-- [ ] Authentication
-- [ ] User ban/Blacklist
-- [ ] Private messages
-- [ ] Group chats
-- [ ] File sharing
+### User Identity & Moderation
+- **Authentication & Profiles:** Introduce a secure login system requiring credentials to protect user accounts, and allow users to define their own unique custom usernames.
+- **Moderation Tools:** Provide the ability to ban or blacklist malicious users to restrict them from accessing the server or participating in the chat.
+
+### Enhanced Messaging
+- **Direct & Group Chats:** Enable secure, one-on-one private messaging and the ability to create isolated group chat rooms for specific topics or invited users.
+- **Targeted Notifications:** Implement the ability to direct messages or alerts specifically to certain users, ensuring they are notified even in busy channels.
+
+### Data & Media
+- **Chat History:** Store message logs securely on the backend so users can access past conversations and catch up on missed messages after reconnecting.
+- **File Sharing:** Support the uploading and distribution of binary files, such as images or documents, directly through the chat interface.
 
 ## Chat Protocol Definition
 
