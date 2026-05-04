@@ -1,7 +1,6 @@
 use crate::ui::{AppEvent, UiEventStream};
 use anyhow::Context;
 use chrono::{DateTime, Utc};
-use crossterm::terminal;
 use futures::{SinkExt, StreamExt};
 use std::io;
 use tokio::net::TcpStream;
@@ -43,7 +42,7 @@ impl ChatApp {
         &mut self,
         message: protocol::message::MessageContent,
     ) -> anyhow::Result<()> {
-        let packet = remote::packet::IncomingPacket {
+        let packet = remote::packet::ClientRemotePacket {
             timestamp: Utc::now().timestamp_millis(),
             message,
         };

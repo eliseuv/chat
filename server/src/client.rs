@@ -18,12 +18,12 @@ use futures::{SinkExt, StreamExt};
 use tokio_util::codec::Framed;
 
 use crate::protocol::{
-    message::{Destination, Message},
+    message::{Message, MessageDestination},
     request::{ClientRequest, Request},
     response::{Response, ResponseType},
 };
 use crate::remote::codec::ServerCodec;
-use crate::remote::packet::{OutgoingMessage, OutgoingPacket, ServerMessage};
+use crate::remote::packet::{OutgoingMessage, ServerMessage, ServerRemotePacket};
 
 /// Client ID counter
 static CLIENT_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -133,7 +133,7 @@ impl Client {
                                 log::debug!("[{client_name}] Roundtrip time: {rtt}ms");
 
                                 let request = Request::Message(Message::new(
-                                    Destination::All,
+                                    MessageDestination::All,
                                     packet.message
                                 ));
                                 if let Err(e) = self.cmd_tx.send(self.identity.wrap_request(request)).await {
@@ -168,7 +168,7 @@ impl Client {
                                 }
                             };
 
-                            let out_packet = OutgoingPacket {
+                            let out_packet = ServerRemotePacket {
                                 timestamp: server_response.timestamp.timestamp_millis(),
                                 message: out_msg,
                             };

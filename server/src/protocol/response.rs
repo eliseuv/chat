@@ -1,4 +1,4 @@
-use super::message::{Destination, MessageContent};
+use super::message::{MessageContent, MessageDestination};
 use chrono::{DateTime, Utc};
 use std::net::SocketAddr;
 
@@ -12,7 +12,7 @@ pub enum ResponseType {
     /// Provides the client with its assigned user id.
     Welcome(u64),
     /// Instructs the client(s) to gracefully close the connection.
-    Disconnect(Destination),
+    Disconnect(MessageDestination),
     /// A routed message originating from another peer on the network.
     Message {
         /// The origin address of the peer who sent this message.

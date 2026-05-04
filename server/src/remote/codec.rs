@@ -1,4 +1,4 @@
-use super::packet::{IncomingPacket, OutgoingPacket};
+use super::packet::{ClientRemotePacket, ServerRemotePacket};
 use futures::io;
 use serde::{Serialize, de::DeserializeOwned};
 use std::marker::PhantomData;
@@ -101,10 +101,10 @@ where
 ///
 /// - **Decodes**: `IncomingPacket` (Client claims traversing upwards)
 /// - **Encodes**: `OutgoingPacket` (Server notifications pushing downwards)
-pub type ServerCodec = RemotePacketCodec<IncomingPacket, OutgoingPacket>;
+pub type ServerCodec = RemotePacketCodec<ClientRemotePacket, ServerRemotePacket>;
 
 /// The designated codec specialization utilized by the Client.
 ///
 /// - **Decodes**: `OutgoingPacket` (Server notifications traversing downwards)
 /// - **Encodes**: `IncomingPacket` (Client claims pushing upwards)
-pub type ClientCodec = RemotePacketCodec<OutgoingPacket, IncomingPacket>;
+pub type ClientCodec = RemotePacketCodec<ServerRemotePacket, ClientRemotePacket>;

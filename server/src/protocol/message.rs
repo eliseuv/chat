@@ -1,29 +1,33 @@
-use std::net::SocketAddr;
+//! Message structures.
+//!
+//! This module defines the core message structures that form the logical
+//! communication layer between the local server engine and connected clients.
+//! These structures are high-level event representations, often containing detailed
+//! metadata (like timestamps and addresses) for processing the message routing.
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// Message destination.
 ///
 /// Dictates the target audience for a specific broadcast or message mechanism.
+/// For now, only broadcast messages are supported, but targeted messages
+/// will be implemented in the future.
+/// TODO: Targeted messages
 #[derive(Debug, Clone)]
-pub enum Destination {
+pub enum MessageDestination {
     /// Broadcast the message to all currently connected clients.
     All,
-    /// Send the message exclusively to a targeted client, identified by its Socket Address.
-    Client(SocketAddr),
 }
 
 /// The actual data payload of a message traversing the protocol.
 ///
 /// Can contain various forms of media, primarily plain text or raw binary blobs.
-/// This enum requires `Serialize` and `Deserialize` because it explicitly traverses
-/// the network boundaries inside the packet structures in `remote.rs`.
+/// TODO: Add support for Arbitrary binary data.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MessageContent {
-    /// A UTF-8 encoded text string. Used for standard chat messages.
+    /// UTF-8 encoded text
     Text(String),
-    /// Arbitrary binary data. Used for files, images, or custom binary structures.
-    Binary(Vec<u8>),
 }
 
 /// A standard multi-purpose message representing data flow between entities.
@@ -35,14 +39,14 @@ pub struct Message {
     /// The moment this message was created or received.
     pub timestamp: DateTime<Utc>,
     /// Where this message should be delivered.
-    pub destination: Destination,
+    pub destination: MessageDestination,
     /// The inner payload data.
     pub content: MessageContent,
 }
 
 impl Message {
     /// Create a new message structure utilizing the current UTC timestamp.
-    pub fn new(destination: Destination, content: MessageContent) -> Self {
+    pub fn new(destination: MessageDestination, content: MessageContent) -> Self {
         Self {
             timestamp: Utc::now(),
             destination,
