@@ -1,3 +1,4 @@
+use crate::ui::{AppEvent, UiEventStream};
 use anyhow::Context;
 use chrono::{DateTime, Utc};
 use crossterm::terminal;
@@ -26,16 +27,16 @@ pub struct ChatApp {
 }
 
 impl ChatApp {
-    pub fn new(stream: TcpStream) -> Self {
-        Self {
+    pub fn new(stream: TcpStream) -> anyhow::Result<Self> {
+        Ok(Self {
             state: State::Default,
             framed_connection: Framed::new(stream, remote::codec::ClientCodec::new()),
             input_buffer: String::new(),
             history: ChatHistory {
                 messages: Vec::new(),
             },
-            interface: ChatInterface::new(io::stdout()),
-        }
+            interface: ChatInterface::new(io::stdout())?,
+        })
     }
 
     pub async fn send_message(
@@ -57,59 +58,47 @@ impl ChatApp {
         self.interface.draw(&self.history, &self.input_buffer)
     }
 
-    async fn handle_event(&mut self, event: crossterm::event::Event) -> anyhow::Result<()> {
-        use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
-
+    async fn handle_event(&mut self, event: AppEvent) -> anyhow::Result<()> {
         match event {
-            Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                if key_event.modifiers.contains(KeyModifiers::CONTROL)
-                    && key_event.code == KeyCode::Char('c')
-                {
-                    self.state = State::Quit;
-                    return Ok(());
-                }
+            AppEvent::None => {}
 
-                match key_event.code {
-                    KeyCode::Char(c) => {
-                        self.input_buffer.push(c);
-                        self.draw()?;
-                    }
-                    KeyCode::Backspace => {
-                        self.input_buffer.pop();
-                        self.draw()?;
-                    }
-                    KeyCode::Enter => {
-                        if !self.input_buffer.is_empty() {
-                            let text = std::mem::take(&mut self.input_buffer);
-                            if let Err(e) = self
-                                .send_message(protocol::message::MessageContent::Text(text))
-                                .await
-                            {
-                                log::error!("Failed to send message: {}", e);
-                            }
-                            self.draw()?;
-                        }
-                    }
-                    KeyCode::Esc => {
-                        self.state = State::Quit;
-                    }
-                    _ => {}
-                }
+            AppEvent::Quit => {
+                self.state = State::Quit;
             }
-            Event::Resize(_, _) => {
+
+            AppEvent::InputChar(c) => {
+                self.input_buffer.push(c);
                 self.draw()?;
             }
-            _ => {}
+
+            AppEvent::Backspace => {
+                self.input_buffer.pop();
+                self.draw()?;
+            }
+
+            AppEvent::Enter => {
+                if !self.input_buffer.is_empty() {
+                    let text = std::mem::take(&mut self.input_buffer);
+                    if let Err(e) = self
+                        .send_message(protocol::message::MessageContent::Text(text))
+                        .await
+                    {
+                        log::error!("Failed to send message: {}", e);
+                    }
+                    self.draw()?;
+                }
+            }
+
+            AppEvent::Resize => {
+                self.draw()?;
+            }
         }
         Ok(())
     }
 
     pub async fn run(&mut self) -> anyhow::Result<()> {
-        use crossterm::event::EventStream;
-
         // Initialize terminal
-        terminal::enable_raw_mode()?;
-        let mut reader = EventStream::new();
+        let mut reader = UiEventStream::new();
         self.draw()?;
 
         // Enter main loop
@@ -117,7 +106,6 @@ impl ChatApp {
             match self.state {
                 // Close the application
                 State::Quit => {
-                    terminal::disable_raw_mode()?;
                     return Ok(());
                 }
 
@@ -129,25 +117,30 @@ impl ChatApp {
                                 self.handle_event(e).await?;
                             }
                         }
-                        result = self.framed_connection.next() => {
-                            match result {
-                                Some(Ok(packet)) => {
-                                    let rtt = Utc::now().timestamp_millis() - packet.timestamp;
-                                    log::debug!("Roundtrip time: {rtt}ms");
 
-                                    self.history.messages.push(ReceivedMessage {
-                                        datetime: DateTime::<Utc>::from_timestamp_millis(packet.timestamp)
-                                            .context("Unable to parse timestamp")?,
-                                        message: packet.message,
-                                    });
-                                    self.draw()?;
-                                }
-                                Some(Err(e)) => {
-                                    log::error!("Failed to read remote stream: {e}");
-                                }
+                        item = self.framed_connection.next() => {
+                            match item {
                                 None => {
                                     // Connection closed
                                     self.state = State::Quit;
+                                }
+
+                                Some(result) => match result {
+                                    Err(e) => {
+                                        log::error!("Failed to read remote stream: {e}");
+                                    },
+
+                                    Ok(packet) => {
+                                        let rtt = Utc::now().timestamp_millis() - packet.timestamp;
+                                        log::debug!("Roundtrip time: {rtt}ms");
+
+                                        self.history.messages.push(ReceivedMessage {
+                                            datetime: DateTime::<Utc>::from_timestamp_millis(packet.timestamp)
+                                                .context("Unable to parse timestamp")?,
+                                        message: packet.message,
+                                    });
+                                    self.draw()?;
+                                    }
                                 }
                             }
                         }

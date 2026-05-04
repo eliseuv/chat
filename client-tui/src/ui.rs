@@ -1,19 +1,102 @@
-use std::io;
-use crossterm::{QueueableCommand, tty::IsTty};
-use server::{protocol, remote};
 use crate::history::ChatHistory;
+use anyhow::Context;
+use crossterm::event::{Event, EventStream, KeyCode, KeyEventKind, KeyModifiers};
+use crossterm::{QueueableCommand, tty::IsTty};
+use futures::StreamExt;
+use server::{protocol, remote};
+use std::io;
 
+/// Represents a high-level application event abstracted from raw terminal input.
+/// 
+/// This enum simplifies raw key strokes and terminal events into semantically
+/// meaningful actions that the application loop can easily process.
+pub enum AppEvent {
+    /// An ignored or unhandled terminal event.
+    None,
+    /// A signal to quit the application (e.g., `Esc` or `Ctrl-C`).
+    Quit,
+    /// A standard character input typed by the user.
+    InputChar(char),
+    /// A backspace keystroke to delete the last character.
+    Backspace,
+    /// An enter/return keystroke to submit a message.
+    Enter,
+    /// A terminal resize event requiring a UI redraw.
+    Resize,
+}
+
+/// A stream wrapper that reads raw terminal events and translates them into `AppEvent`s.
+pub struct UiEventStream {
+    reader: EventStream,
+}
+
+impl UiEventStream {
+    /// Initializes a new `UiEventStream` connected to the standard terminal event stream.
+    pub fn new() -> Self {
+        Self {
+            reader: EventStream::new(),
+        }
+    }
+
+    /// Asynchronously waits for and returns the next parsed `AppEvent`.
+    ///
+    /// Intercepts special control sequences like `Ctrl-C` to trigger a `Quit` event.
+    pub async fn next(&mut self) -> Option<anyhow::Result<AppEvent>> {
+        let event = self.reader.next().await?;
+        match event {
+            Ok(Event::Key(key_event)) if key_event.kind == KeyEventKind::Press => {
+                if key_event.modifiers.contains(KeyModifiers::CONTROL)
+                    && key_event.code == KeyCode::Char('c')
+                {
+                    return Some(Ok(AppEvent::Quit));
+                }
+
+                match key_event.code {
+                    KeyCode::Char(c) => Some(Ok(AppEvent::InputChar(c))),
+                    KeyCode::Backspace => Some(Ok(AppEvent::Backspace)),
+                    KeyCode::Enter => Some(Ok(AppEvent::Enter)),
+                    KeyCode::Esc => Some(Ok(AppEvent::Quit)),
+                    _ => Some(Ok(AppEvent::None)),
+                }
+            }
+            Ok(Event::Resize(_, _)) => Some(Ok(AppEvent::Resize)),
+            Ok(_) => Some(Ok(AppEvent::None)),
+            Err(e) => Some(Err(e.into())),
+        }
+    }
+}
+
+impl Default for UiEventStream {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The main interface for managing terminal output and rendering the chat UI.
+///
+/// Handles drawing the chat history, user input buffer, and maintains the terminal
+/// state using RAII (Resource Acquisition Is Initialization).
 #[derive(Debug)]
 pub struct ChatInterface<O: io::Write + QueueableCommand + IsTty> {
+    /// The underlying output stream (usually `io::stdout()`) used to write rendered characters.
     pub output: O,
 }
 
 impl<O: io::Write + QueueableCommand + IsTty> ChatInterface<O> {
-    /// Create new chat interface
-    pub fn new(output: O) -> Self {
-        Self { output }
+    /// Creates a new `ChatInterface` and initializes the terminal into raw mode.
+    ///
+    /// Raw mode disables canonical input processing and echoing, giving the application
+    /// full control over the input stream and output rendering.
+    pub fn new(output: O) -> anyhow::Result<Self> {
+        crossterm::terminal::enable_raw_mode().context("Unable to enable raw terminal mode")?;
+        Ok(Self { output })
     }
 
+    /// Clears the terminal and re-draws the entire chat interface.
+    ///
+    /// # Arguments
+    /// * `history` - The collection of received chat messages.
+    /// * `input_buffer` - The current text the user is typing.
     pub fn draw(&mut self, history: &ChatHistory, input_buffer: &str) -> anyhow::Result<()> {
         use crossterm::{
             cursor,
@@ -40,7 +123,10 @@ impl<O: io::Write + QueueableCommand + IsTty> ChatInterface<O> {
             let text = match &msg.message {
                 remote::packet::OutgoingMessage::ServerMessage(s) => match s {
                     remote::packet::ServerMessage::Welcome(id) => {
-                        format!("[{}] [SERVER]: Welcome to the chat! You are User {}", time_str, id)
+                        format!(
+                            "[{}] [SERVER]: Welcome to the chat! You are User {}",
+                            time_str, id
+                        )
                     }
                     remote::packet::ServerMessage::Disconnect => {
                         format!("[{}] [SERVER]: Disconnected.", time_str)
@@ -49,7 +135,6 @@ impl<O: io::Write + QueueableCommand + IsTty> ChatInterface<O> {
                 remote::packet::OutgoingMessage::PeerMessage { author_id, content } => {
                     let content_str = match content {
                         protocol::message::MessageContent::Text(t) => t.clone(),
-                        protocol::message::MessageContent::Binary(_) => "<binary data>".to_string(),
                     };
                     format!("[{}] [User {}]: {}", time_str, author_id, content_str)
                 }
@@ -70,5 +155,17 @@ impl<O: io::Write + QueueableCommand + IsTty> ChatInterface<O> {
 
         self.output.flush()?;
         Ok(())
+    }
+}
+
+/// Ensures that the terminal is properly restored to its original state when the application exits.
+///
+/// This RAII implementation guarantees that even during a panic, `disable_raw_mode()` will be
+/// called to prevent leaving the user's terminal in an unusable state.
+impl<O: io::Write + QueueableCommand + IsTty> Drop for ChatInterface<O> {
+    fn drop(&mut self) {
+        if let Err(e) = crossterm::terminal::disable_raw_mode() {
+            log::error!("Unable to disable raw mode: {}", e);
+        }
     }
 }

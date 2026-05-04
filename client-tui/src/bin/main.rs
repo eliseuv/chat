@@ -40,12 +40,18 @@ async fn main() -> anyhow::Result<()> {
         match TcpStream::connect(socket).await {
             Ok(stream) => break stream,
             Err(e) => {
-                println!("Unable to connect to server: {}. Retrying in 2 seconds...", e);
+                println!(
+                    "Unable to connect to server: {}. Retrying in 2 seconds...",
+                    e
+                );
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             }
         }
     };
 
     // Run chat application
-    ChatApp::new(stream).run().await
+    ChatApp::new(stream)
+        .context("Unable to create chat application")?
+        .run()
+        .await
 }
