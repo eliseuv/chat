@@ -3,11 +3,7 @@
 
 use tokio::sync::{broadcast, mpsc};
 
-use crate::protocol::{
-    message::Message,
-    request::{ClientRequest, Request},
-    response::{Response, ResponseType},
-};
+use crate::protocol::{ChatMessage, ClientRequest, Request, Response};
 
 /// Channel size
 pub const CHANNEL_CAPACITY: usize = 32;
@@ -51,15 +47,13 @@ impl Server {
             tokio::select! {
                 Some(ClientRequest {
                     client_id,
-                    addr,
-                    timestamp: _, // TODO: process timestamp
                     request,
                 }) = self.req_rx.recv() => {
                     match request {
 
                         Request::Connect => {
                             // For now we accept all connection requests
-                            let response = Response::new(ResponseType::Welcome(client_id));
+                            let response = Response::Welcome(client_id);
                             let _ = self.bcast_tx.send(response);
                         }
 
@@ -67,10 +61,10 @@ impl Server {
                             // TODO: Gracefully disconnect the client
                         }
 
-                        Request::Message(Message { content, .. }) => {
-                            let response = Response::new(ResponseType::Message {
-                                sender: addr,
-                                sender_id: client_id,
+                        Request::Message(ChatMessage { author_id, destination, content }) => {
+                            let response = Response::Message(ChatMessage{
+                                author_id,
+                                destination,
                                 content,
                             });
                             let _ = self.bcast_tx.send(response);

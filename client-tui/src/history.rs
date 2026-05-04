@@ -5,7 +5,7 @@ use server::remote;
 pub struct ReceivedMessage {
     // TODO: Use local time
     pub datetime: DateTime<Utc>,
-    pub message: remote::packet::OutgoingMessage,
+    pub message: remote::packet::ServerMessage,
 }
 
 /// Chat history

@@ -3,11 +3,12 @@ use anyhow::Context;
 use crossterm::event::{Event, EventStream, KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::{QueueableCommand, tty::IsTty};
 use futures::StreamExt;
-use server::{protocol, remote};
+use server::protocol::{ChatMessage, MessageContent};
+use server::remote::packet::{ServerCommand, ServerMessage};
 use std::io;
 
 /// Represents a high-level application event abstracted from raw terminal input.
-/// 
+///
 /// This enum simplifies raw key strokes and terminal events into semantically
 /// meaningful actions that the application loop can easily process.
 pub enum AppEvent {
@@ -121,20 +122,24 @@ impl<O: io::Write + QueueableCommand + IsTty> ChatInterface<O> {
                 .format("%H:%M:%S");
 
             let text = match &msg.message {
-                remote::packet::OutgoingMessage::ServerMessage(s) => match s {
-                    remote::packet::ServerMessage::Welcome(id) => {
+                ServerMessage::Command(s) => match s {
+                    ServerCommand::Welcome(id) => {
                         format!(
                             "[{}] [SERVER]: Welcome to the chat! You are User {}",
                             time_str, id
                         )
                     }
-                    remote::packet::ServerMessage::Disconnect => {
+                    ServerCommand::Disconnect => {
                         format!("[{}] [SERVER]: Disconnected.", time_str)
                     }
                 },
-                remote::packet::OutgoingMessage::PeerMessage { author_id, content } => {
+                ServerMessage::Chat(ChatMessage {
+                    author_id,
+                    destination: _,
+                    content,
+                }) => {
                     let content_str = match content {
-                        protocol::message::MessageContent::Text(t) => t.clone(),
+                        MessageContent::Text(t) => t.clone(),
                     };
                     format!("[{}] [User {}]: {}", time_str, author_id, content_str)
                 }

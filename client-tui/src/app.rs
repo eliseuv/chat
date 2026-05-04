@@ -2,13 +2,15 @@ use crate::ui::{AppEvent, UiEventStream};
 use anyhow::Context;
 use chrono::{DateTime, Utc};
 use futures::{SinkExt, StreamExt};
+use server::protocol::MessageContent;
+use server::remote::codec::ClientCodec;
+use server::remote::packet::ClientRemotePacket;
 use std::io;
 use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
 
 use crate::history::{ChatHistory, ReceivedMessage};
 use crate::ui::ChatInterface;
-use server::{protocol, remote};
 
 #[derive(Debug)]
 pub enum State {
@@ -19,7 +21,7 @@ pub enum State {
 /// Chat Application
 pub struct ChatApp {
     state: State,
-    framed_connection: Framed<TcpStream, remote::codec::ClientCodec>,
+    framed_connection: Framed<TcpStream, ClientCodec>,
     input_buffer: String,
     history: ChatHistory,
     interface: ChatInterface<io::Stdout>,
@@ -29,7 +31,7 @@ impl ChatApp {
     pub fn new(stream: TcpStream) -> anyhow::Result<Self> {
         Ok(Self {
             state: State::Default,
-            framed_connection: Framed::new(stream, remote::codec::ClientCodec::new()),
+            framed_connection: Framed::new(stream, ClientCodec::new()),
             input_buffer: String::new(),
             history: ChatHistory {
                 messages: Vec::new(),
@@ -38,13 +40,10 @@ impl ChatApp {
         })
     }
 
-    pub async fn send_message(
-        &mut self,
-        message: protocol::message::MessageContent,
-    ) -> anyhow::Result<()> {
-        let packet = remote::packet::ClientRemotePacket {
+    pub async fn send_message(&mut self, message: MessageContent) -> anyhow::Result<()> {
+        let packet = ClientRemotePacket {
             timestamp: Utc::now().timestamp_millis(),
-            message,
+            message_content: message,
         };
         self.framed_connection
             .send(packet)
@@ -78,10 +77,7 @@ impl ChatApp {
             AppEvent::Enter => {
                 if !self.input_buffer.is_empty() {
                     let text = std::mem::take(&mut self.input_buffer);
-                    if let Err(e) = self
-                        .send_message(protocol::message::MessageContent::Text(text))
-                        .await
-                    {
+                    if let Err(e) = self.send_message(MessageContent::Text(text)).await {
                         log::error!("Failed to send message: {}", e);
                     }
                     self.draw()?;

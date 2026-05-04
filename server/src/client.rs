@@ -1,10 +1,11 @@
-//! Client
+//! Client thread
 //! Worker thread for each client connection
 
 use std::{
     fmt::Display,
     net::SocketAddr,
     sync::atomic::{self, AtomicU64},
+    task::Context,
 };
 
 use tokio::{
@@ -17,23 +18,14 @@ use chrono::Utc;
 use futures::{SinkExt, StreamExt};
 use tokio_util::codec::Framed;
 
-use crate::protocol::{
-    message::{Message, MessageDestination},
-    request::{ClientRequest, Request},
-    response::{Response, ResponseType},
-};
+use crate::protocol::{ChatMessage, ClientRequest, MessageDestination, Request, Response};
 use crate::remote::codec::ServerCodec;
-use crate::remote::packet::{OutgoingMessage, ServerMessage, ServerRemotePacket};
+use crate::remote::packet::{ServerCommand, ServerMessage, ServerRemotePacket};
 
 /// Client ID counter
 static CLIENT_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Represents the core identity of a client (ID and address).
-/// This is isolated into a separate, `Copy`able struct to avoid partial move
-/// errors in the main `Client` loop. When `Client::stream` is consumed by `Framed::new`,
-/// the `Client` struct becomes partially moved, which bans calling methods on `&self`.
-/// By copying this sub-struct instead, we can continuously stamp outgoing messages
-/// with identity metadata without needing to borrow `self`.
 #[derive(Debug, Clone, Copy)]
 pub struct ClientIdentity {
     /// Unique ID
@@ -43,16 +35,9 @@ pub struct ClientIdentity {
 }
 
 impl ClientIdentity {
-    /// Wraps a raw `Request` into a `ClientRequest` by attaching the client's
-    /// identity (ID and address) and the current timestamp.
-    ///
-    /// Takes `self` by value (a cheap copy) rather than `&self` to ensure we can
-    /// always call this even if the parent `Client` is partially moved.
     pub fn wrap_request(self, request: Request) -> ClientRequest {
         ClientRequest {
             client_id: self.id,
-            addr: self.addr,
-            timestamp: Utc::now(),
             request,
         }
     }
@@ -119,23 +104,33 @@ impl Client {
                 // Read from network socket
                 item = framed.next() => {
                     match item {
+                        // Connection closed by client
                         None => {
                             log::info!("[{client_name}] Connection closed by client");
                             break;
                         }
+
+                        // Received a message from client
                         Some(result) => match result {
+                            // Stream error
                             Err(e) => {
                                 log::error!("[{client_name}] Stream error: {e}");
                                 bail!(e);
                             }
+
+                            // Valid message received
                             Ok(packet) => {
                                 let rtt = Utc::now().timestamp_millis() - packet.timestamp;
                                 log::debug!("[{client_name}] Roundtrip time: {rtt}ms");
 
-                                let request = Request::Message(Message::new(
-                                    MessageDestination::All,
-                                    packet.message
-                                ));
+                                // Request the server to route the message to other peers
+                                let request = Request::Message(
+                                    ChatMessage {
+                                        author_id: self.identity.id,
+                                        destination: MessageDestination::AllUsers,
+                                        content: packet.message_content,
+                                    }
+                                );
                                 if let Err(e) = self.cmd_tx.send(self.identity.wrap_request(request)).await {
                                     log::error!("[{client_name}] Failed to forward request to server core: {e}");
                                     break;
@@ -148,42 +143,58 @@ impl Client {
                 // Read from broadcast channel
                 result = self.bcast_rx.recv() => {
                     match result {
-                        Ok(server_response) => {
-                            let out_msg = match server_response.response_type {
-                                ResponseType::Welcome(user_id) => {
-                                    if user_id == self.identity.id {
-                                        OutgoingMessage::ServerMessage(ServerMessage::Welcome(user_id))
+                        // Broadcast channel closed
+                        Err(broadcast::error::RecvError::Closed) => {
+                            return Err(broadcast::error::RecvError::Closed.into())
+                        }
+
+                        // Broadcast channel lagged
+                        Err(broadcast::error::RecvError::Lagged(n)) => log::warn!("[{client_name}] Broadcast receiver lagged by {n} messages"),
+
+                        // Valid response
+                        Ok(response) => {
+
+                            match response {
+                                Response::Welcome(client_id) => {
+                                    if client_id == self.identity.id {
+                                        let remote_msg = ServerMessage::Command(ServerCommand::Welcome(client_id));
+                                        let packet = ServerRemotePacket::new(remote_msg);
+                                        if let Err(e) = framed.send(packet).await {
+                                            log::error!("[{client_name}] Failed to send welcome message to client: {e}");
+                                            break;
+                                        }
+                                    }
+                                    else {
+                                        continue;
+                                    }
+                                }
+
+                                Response::Disconnect(client_addr) => {
+                                    if client_addr == self.identity.addr {
+                                        let remote_msg = ServerMessage::Command(ServerCommand::Disconnect);
+                                        let packet = ServerRemotePacket::new(remote_msg);
+                                        if let Err(e) = framed.send(packet).await {
+                                            log::error!("[{client_name}] Failed to send disconnect message to client: {e}");
+                                            break;
+                                        }
                                     } else {
                                         continue;
                                     }
                                 }
-                                ResponseType::Disconnect(_) => {
-                                    OutgoingMessage::ServerMessage(ServerMessage::Disconnect)
-                                }
-                                ResponseType::Message { sender: _, sender_id, content } => {
-                                    OutgoingMessage::PeerMessage {
-                                        author_id: sender_id,
-                                        content,
+
+                                Response::Message(chat_message) => {
+                                    match chat_message.destination {
+                                        MessageDestination::AllUsers => {
+                                            let remote_msg = ServerMessage::Chat(chat_message);
+                                            let packet = ServerRemotePacket::new(remote_msg);
+                                            if let Err(e) = framed.send(packet).await {
+                                                log::error!("[{client_name}] Failed to send message to client: {e}");
+                                                break;
+                                            }
+                                        }
                                     }
                                 }
-                            };
-
-                            let out_packet = ServerRemotePacket {
-                                timestamp: server_response.timestamp.timestamp_millis(),
-                                message: out_msg,
-                            };
-
-                            if let Err(e) = framed.send(out_packet).await {
-                                log::error!("[{client_name}] Failed to send packet to client: {e}");
-                                break;
                             }
-                        }
-                        Err(broadcast::error::RecvError::Lagged(n)) => {
-                            log::warn!("[{client_name}] Broadcast receiver lagged by {n} messages");
-                        }
-                        Err(broadcast::error::RecvError::Closed) => {
-                            log::info!("[{client_name}] Broadcast channel closed");
-                            break;
                         }
                     }
                 }
