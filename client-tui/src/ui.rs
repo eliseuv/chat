@@ -1,17 +1,19 @@
 use crate::history::ChatHistory;
 use anyhow::Context;
-use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
-use ratatui::crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
-use ratatui::crossterm::{execute, tty::IsTty};
-use tokio::sync::mpsc;
-use ratatui::backend::CrosstermBackend;
-use ratatui::layout::{Constraint, Direction, Layout};
-use ratatui::text::{Line};
-use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 use ratatui::Terminal;
+use ratatui::backend::CrosstermBackend;
+use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+use ratatui::crossterm::terminal::{
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+};
+use ratatui::crossterm::{execute, tty::IsTty};
+use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::text::Line;
+use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 use server::protocol::{ChatMessage, MessageContent};
 use server::remote::packet::{ServerCommand, ServerMessage};
 use std::io;
+use tokio::sync::mpsc;
 
 /// Represents a high-level application event abstracted from raw terminal input.
 ///
@@ -41,7 +43,7 @@ impl UiEventStream {
     /// Initializes a new `UiEventStream` connected to the standard terminal event stream.
     pub fn new() -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
-        
+
         std::thread::spawn(move || {
             loop {
                 match event::read() {
@@ -127,16 +129,15 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
     /// * `input_buffer` - The current text the user is typing.
     pub fn draw(&mut self, history: &ChatHistory, input_buffer: &str) -> anyhow::Result<()> {
         self.terminal.draw(|f| {
+            let width = f.area().width.saturating_sub(2) as usize;
+            let prompt_text = format!("> {}", input_buffer);
+            let (wrapped_prompt, input_lines) = wrap_text(&prompt_text, width);
+            let input_height = (input_lines as u16).clamp(1, 5) + 2; // Clamp text to 1-5 lines, add 2 for borders
+
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .margin(0)
-                .constraints(
-                    [
-                        Constraint::Min(1),
-                        Constraint::Length(3),
-                    ]
-                    .as_ref(),
-                )
+                .constraints([Constraint::Min(1), Constraint::Length(input_height)].as_ref())
                 .split(f.area());
 
             let mut list_items = Vec::new();
@@ -149,16 +150,17 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
                 let text = match &msg.message {
                     ServerMessage::Command(s) => match s {
                         ServerCommand::Welcome(id) => {
-                            format!("[{}] [SERVER]: Welcome to the chat! You are User {}", time_str, id)
+                            format!(
+                                "[{}] [SERVER]: Welcome to the chat! You are User {}",
+                                time_str, id
+                            )
                         }
                         ServerCommand::Disconnect => {
                             format!("[{}] [SERVER]: Disconnected.", time_str)
                         }
                     },
                     ServerMessage::Chat(ChatMessage {
-                        author_id,
-                        content,
-                        ..
+                        author_id, content, ..
                     }) => {
                         let content_str = match content {
                             MessageContent::Text(t) => t.clone(),
@@ -176,10 +178,10 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
 
             let history_list = List::new(list_items)
                 .block(Block::default().title("Chat History").borders(Borders::ALL));
-            
+
             f.render_stateful_widget(history_list, chunks[0], &mut state);
 
-            let input_paragraph = Paragraph::new(format!("> {}", input_buffer))
+            let input_paragraph = Paragraph::new(wrapped_prompt)
                 .block(Block::default().title("Input").borders(Borders::ALL));
             f.render_widget(input_paragraph, chunks[1]);
         })?;
@@ -200,4 +202,88 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> Drop for ChatI
             log::error!("Unable to leave alternate screen: {}", e);
         }
     }
+}
+
+/// Simulates word wrapping on the input buffer and returns the wrapped string and line count.
+fn wrap_text(text: &str, max_width: usize) -> (String, usize) {
+    if max_width == 0 {
+        return (text.to_string(), 1);
+    }
+    
+    let mut words = Vec::new();
+    let mut current_word = String::new();
+    for c in text.chars() {
+        if c == ' ' {
+            if !current_word.is_empty() {
+                words.push(current_word.clone());
+                current_word.clear();
+            }
+            words.push(" ".to_string());
+        } else {
+            current_word.push(c);
+        }
+    }
+    if !current_word.is_empty() {
+        words.push(current_word);
+    }
+    
+    let mut wrapped = String::new();
+    let mut current_line_len = 0;
+    let mut line_count = 0;
+    
+    for word in words {
+        let word_width = word.chars().count();
+        
+        if current_line_len + word_width <= max_width {
+            wrapped.push_str(&word);
+            current_line_len += word_width;
+        } else {
+            if word_width > max_width {
+                // Word is wider than max_width. We must split it.
+                let remaining = max_width.saturating_sub(current_line_len);
+                let mut chars = word.chars();
+                
+                // Fill the rest of the current line first
+                if remaining > 0 {
+                    let first_part: String = chars.by_ref().take(remaining).collect();
+                    wrapped.push_str(&first_part);
+                }
+                
+                // Start a new line for the rest
+                wrapped.push('\n');
+                line_count += 1;
+                current_line_len = 0;
+                
+                // Keep chunking the rest of the word
+                let mut chunk = String::new();
+                for c in chars {
+                    chunk.push(c);
+                    if chunk.chars().count() == max_width {
+                        wrapped.push_str(&chunk);
+                        wrapped.push('\n');
+                        line_count += 1;
+                        chunk.clear();
+                    }
+                }
+                if !chunk.is_empty() {
+                    wrapped.push_str(&chunk);
+                    current_line_len = chunk.chars().count();
+                }
+            } else {
+                // Normal wrap at word boundary
+                if !wrapped.is_empty() && !wrapped.ends_with('\n') {
+                    wrapped.push('\n');
+                    line_count += 1;
+                }
+                wrapped.push_str(&word);
+                current_line_len = word_width;
+            }
+        }
+    }
+    
+    if current_line_len > 0 || line_count == 0 {
+        line_count += 1;
+    }
+    
+    (wrapped, line_count)
 }
