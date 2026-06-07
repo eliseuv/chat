@@ -12,4 +12,6 @@ pub struct ReceivedMessage {
 #[derive(Debug)]
 pub struct ChatHistory {
     pub messages: Vec<ReceivedMessage>,
+    pub own_id: Option<u64>,
 }
+

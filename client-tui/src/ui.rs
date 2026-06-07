@@ -165,7 +165,12 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
                         let content_str = match content {
                             MessageContent::Text(t) => t.clone(),
                         };
-                        format!("[{}] [User {}]: {}", time_str, author_id, content_str)
+                        let sender = if Some(*author_id) == history.own_id {
+                            "You".to_string()
+                        } else {
+                            format!("User {}", author_id)
+                        };
+                        format!("[{}] [{}]: {}", time_str, sender, content_str)
                     }
                 };
                 list_items.push(ListItem::new(Line::from(text)));

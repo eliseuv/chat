@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use futures::{SinkExt, StreamExt};
 use server::protocol::MessageContent;
 use server::remote::codec::ClientCodec;
-use server::remote::packet::ClientRemotePacket;
+use server::remote::packet::{ClientRemotePacket, ServerCommand, ServerMessage};
 use std::io;
 use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
@@ -35,6 +35,7 @@ impl ChatApp {
             input_buffer: String::new(),
             history: ChatHistory {
                 messages: Vec::new(),
+                own_id: None,
             },
             interface: ChatInterface::new(io::stdout())?,
         })
@@ -129,12 +130,16 @@ impl ChatApp {
                                         let rtt = Utc::now().timestamp_millis() - packet.timestamp;
                                         log::debug!("Roundtrip time: {rtt}ms");
 
+                                        if let ServerMessage::Command(ServerCommand::Welcome(id)) = &packet.message {
+                                            self.history.own_id = Some(*id);
+                                        }
+
                                         self.history.messages.push(ReceivedMessage {
                                             datetime: DateTime::<Utc>::from_timestamp_millis(packet.timestamp)
                                                 .context("Unable to parse timestamp")?,
-                                        message: packet.message,
-                                    });
-                                    self.draw()?;
+                                            message: packet.message,
+                                        });
+                                        self.draw()?;
                                     }
                                 }
                             }
