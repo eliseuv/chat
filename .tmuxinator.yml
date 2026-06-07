@@ -3,7 +3,7 @@
 name: chat_test
 root: .
 
-on_project_start: export RUST_BACKTRACE=1 && cargo build
+on_project_start: export RUST_BACKTRACE=1 && cargo build -p server && cargo build -p client-tui
 
 startup_pane: 2
 
