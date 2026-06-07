@@ -19,7 +19,7 @@ futures = { workspace = true }
 clap = { workspace = true }
 
 # TUI
-crossterm = { version = "0.29", features = ["event-stream"] }
+ratatui = "0.30.1"
 
 # Logging
 log = { workspace = true }
