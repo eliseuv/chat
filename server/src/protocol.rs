@@ -39,6 +39,7 @@ pub enum MessageContent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub author_id: u64,
+    pub author_username: String,
     /// Where this message should be delivered.
     pub destination: MessageDestination,
     /// The inner payload data.
@@ -52,7 +53,9 @@ pub struct ChatMessage {
 #[derive(Debug, Clone)]
 pub enum Request {
     /// Signals the intent to connect and start listening for updates.
-    Connect,
+    Connect { username: String },
+    /// Requests the list of currently connected active users.
+    GetActiveUsers,
     /// Signals the intent to disconnect from the server and terminate the session.
     Disconnect,
     /// Requests the server to route a specific `Message`.
@@ -68,6 +71,23 @@ pub struct ClientRequest {
     pub request: Request,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum LoginError {
+    UsernameTaken,
+    InvalidUsername,
+    EmptyUsername,
+}
+
+impl std::fmt::Display for LoginError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LoginError::UsernameTaken => write!(f, "Username is already taken"),
+            LoginError::InvalidUsername => write!(f, "Invalid username format"),
+            LoginError::EmptyUsername => write!(f, "Username cannot be empty"),
+        }
+    }
+}
+
 /// A top-level logical response from the server directed towards connected clients.
 ///
 /// This enum groups together different types of instructions and information
@@ -77,6 +97,10 @@ pub enum Response {
     /// Indicates that the connection was successfully registered.
     /// Provides the client with its assigned user id.
     Welcome(u64),
+    /// Indicates that the login was rejected.
+    LoginReject { client_id: u64, error: LoginError },
+    /// Tells the client about the current active usernames.
+    ActiveUsers { usernames: Vec<String> },
     /// Instructs the client to close the connection.
     Disconnect(SocketAddr),
     /// A routed message originating from another peer on the network.

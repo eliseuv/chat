@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use server::remote;
+use server::protocol::LoginError;
 
 #[derive(Debug)]
 pub struct ReceivedMessage {
@@ -13,5 +14,8 @@ pub struct ReceivedMessage {
 pub struct ChatHistory {
     pub messages: Vec<ReceivedMessage>,
     pub own_id: Option<u64>,
+    pub own_username: Option<String>,
+    pub login_error: Option<LoginError>,
+    pub active_usernames: Vec<String>,
 }
 

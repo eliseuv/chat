@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use futures::{SinkExt, StreamExt};
 use server::protocol::MessageContent;
 use server::remote::codec::ClientCodec;
-use server::remote::packet::{ClientRemotePacket, ServerCommand, ServerMessage};
+use server::remote::packet::{ClientMessage, ClientRemotePacket, ServerCommand, ServerMessage};
 use std::io;
 use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
@@ -12,10 +12,11 @@ use tokio_util::codec::Framed;
 use crate::history::{ChatHistory, ReceivedMessage};
 use crate::ui::ChatInterface;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum State {
     Quit,
-    Default,
+    Login,
+    ChatRoom,
 }
 
 /// Chat Application
@@ -30,12 +31,15 @@ pub struct ChatApp {
 impl ChatApp {
     pub fn new(stream: TcpStream) -> anyhow::Result<Self> {
         Ok(Self {
-            state: State::Default,
+            state: State::Login,
             framed_connection: Framed::new(stream, ClientCodec::new()),
             input_buffer: String::new(),
             history: ChatHistory {
                 messages: Vec::new(),
                 own_id: None,
+                own_username: None,
+                login_error: None,
+                active_usernames: Vec::new(),
             },
             interface: ChatInterface::new(io::stdout())?,
         })
@@ -44,7 +48,7 @@ impl ChatApp {
     pub async fn send_message(&mut self, message: MessageContent) -> anyhow::Result<()> {
         let packet = ClientRemotePacket {
             timestamp: Utc::now().timestamp_millis(),
-            message_content: message,
+            message: ClientMessage::Chat(message),
         };
         self.framed_connection
             .send(packet)
@@ -53,8 +57,20 @@ impl ChatApp {
         Ok(())
     }
 
+    pub async fn send_login(&mut self, username: String) -> anyhow::Result<()> {
+        let packet = ClientRemotePacket {
+            timestamp: Utc::now().timestamp_millis(),
+            message: ClientMessage::Login(username),
+        };
+        self.framed_connection
+            .send(packet)
+            .await
+            .context("Unable to send login request")?;
+        Ok(())
+    }
+
     pub fn draw(&mut self) -> anyhow::Result<()> {
-        self.interface.draw(&self.history, &self.input_buffer)
+        self.interface.draw(self.state, &self.history, &self.input_buffer)
     }
 
     async fn handle_event(&mut self, event: AppEvent) -> anyhow::Result<()> {
@@ -78,8 +94,19 @@ impl ChatApp {
             AppEvent::Enter => {
                 if !self.input_buffer.is_empty() {
                     let text = std::mem::take(&mut self.input_buffer);
-                    if let Err(e) = self.send_message(MessageContent::Text(text)).await {
-                        log::error!("Failed to send message: {}", e);
+                    match self.state {
+                        State::Login => {
+                            self.history.own_username = Some(text.clone());
+                            if let Err(e) = self.send_login(text).await {
+                                log::error!("Failed to send login: {}", e);
+                            }
+                        }
+                        State::ChatRoom => {
+                            if let Err(e) = self.send_message(MessageContent::Text(text)).await {
+                                log::error!("Failed to send message: {}", e);
+                            }
+                        }
+                        _ => {}
                     }
                     self.draw()?;
                 }
@@ -106,7 +133,7 @@ impl ChatApp {
                 }
 
                 // Keep the application running
-                State::Default => {
+                State::Login | State::ChatRoom => {
                     tokio::select! {
                         maybe_event = reader.next() => {
                             if let Some(Ok(e)) = maybe_event {
@@ -130,8 +157,22 @@ impl ChatApp {
                                         let rtt = Utc::now().timestamp_millis() - packet.timestamp;
                                         log::debug!("Roundtrip time: {rtt}ms");
 
-                                        if let ServerMessage::Command(ServerCommand::Welcome(id)) = &packet.message {
-                                            self.history.own_id = Some(*id);
+                                        if let ServerMessage::Command(cmd) = &packet.message {
+                                            match cmd {
+                                                ServerCommand::Welcome(id) => {
+                                                    self.history.own_id = Some(*id);
+                                                    self.history.login_error = None;
+                                                    self.state = State::ChatRoom;
+                                                }
+                                                ServerCommand::LoginError(reason) => {
+                                                    self.history.login_error = Some(reason.clone());
+                                                    self.history.own_username = None;
+                                                }
+                                                ServerCommand::ActiveUsers { usernames } => {
+                                                    self.history.active_usernames = usernames.clone();
+                                                }
+                                                _ => {}
+                                            }
                                         }
 
                                         self.history.messages.push(ReceivedMessage {

@@ -1,7 +1,7 @@
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
-use crate::protocol::{ChatMessage, MessageContent};
+use crate::protocol::{ChatMessage, MessageContent, LoginError};
 
 /// Fundamental connection control signals from the server to the client.
 ///
@@ -12,6 +12,10 @@ use crate::protocol::{ChatMessage, MessageContent};
 pub enum ServerCommand {
     /// Indicates the handshake was valid and the connection is active.
     Welcome(u64),
+    /// Indicates a registration or login failure.
+    LoginError(LoginError),
+    /// Tells the client about the current active usernames.
+    ActiveUsers { usernames: Vec<String> },
     /// Indicates the server is actively dropping the client's connection.
     Disconnect,
 }
@@ -47,6 +51,12 @@ impl ServerRemotePacket {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ClientMessage {
+    Login(String),
+    Chat(MessageContent),
+}
+
 /// The wire-level envelope received by the Server explicitly from the Client.
 ///
 /// Clients transmit this structure upwards to relay application data
@@ -55,6 +65,6 @@ impl ServerRemotePacket {
 pub struct ClientRemotePacket {
     /// Untrusted. Just used for roundtrip time measurement.
     pub timestamp: i64,
-    /// The intended payload (text message, etc.) the client wishes to send.
-    pub message_content: MessageContent,
+    /// The message or command sent by the client.
+    pub message: ClientMessage,
 }

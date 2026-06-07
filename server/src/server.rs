@@ -3,7 +3,7 @@
 
 use tokio::sync::{broadcast, mpsc};
 
-use crate::protocol::{ChatMessage, ClientRequest, Request, Response};
+use crate::protocol::{ChatMessage, ClientRequest, LoginError, Request, Response};
 
 /// Channel size
 pub const CHANNEL_CAPACITY: usize = 32;
@@ -15,6 +15,8 @@ pub struct Server {
     req_rx: mpsc::Receiver<ClientRequest>,
     /// Broadcast sender
     bcast_tx: broadcast::Sender<Response>,
+    /// Map of active client_id -> username
+    active_users: std::collections::HashMap<u64, String>,
 }
 
 impl Server {
@@ -33,6 +35,7 @@ impl Server {
             Self {
                 req_rx: cmd_rx,
                 bcast_tx: bcast_tx.clone(),
+                active_users: std::collections::HashMap::new(),
             },
             cmd_tx,
             bcast_tx,
@@ -51,19 +54,57 @@ impl Server {
                 }) = self.req_rx.recv() => {
                     match request {
 
-                        Request::Connect => {
-                            // For now we accept all connection requests
-                            let response = Response::Welcome(client_id);
+                        Request::Connect { username } => {
+                            let taken = self.active_users.values().any(|u| u.eq_ignore_ascii_case(&username));
+                            if username.trim().is_empty() {
+                                let response = Response::LoginReject {
+                                    client_id,
+                                    error: LoginError::EmptyUsername,
+                                };
+                                let _ = self.bcast_tx.send(response);
+                            } else if taken {
+                                let response = Response::LoginReject {
+                                    client_id,
+                                    error: LoginError::UsernameTaken,
+                                };
+                                let _ = self.bcast_tx.send(response);
+                            } else {
+                                self.active_users.insert(client_id, username);
+                                let response = Response::Welcome(client_id);
+                                let _ = self.bcast_tx.send(response);
+
+                                // Broadcast the updated active users list!
+                                let active_usernames: Vec<String> = self.active_users.values().cloned().collect();
+                                let active_response = Response::ActiveUsers {
+                                    usernames: active_usernames,
+                                };
+                                let _ = self.bcast_tx.send(active_response);
+                            }
+                        }
+
+                        Request::GetActiveUsers => {
+                            let active_usernames: Vec<String> = self.active_users.values().cloned().collect();
+                            let response = Response::ActiveUsers {
+                                usernames: active_usernames,
+                            };
                             let _ = self.bcast_tx.send(response);
                         }
 
                         Request::Disconnect => {
-                            // TODO: Gracefully disconnect the client
+                            self.active_users.remove(&client_id);
+
+                            // Broadcast the updated active users list!
+                            let active_usernames: Vec<String> = self.active_users.values().cloned().collect();
+                            let active_response = Response::ActiveUsers {
+                                usernames: active_usernames,
+                            };
+                            let _ = self.bcast_tx.send(active_response);
                         }
 
-                        Request::Message(ChatMessage { author_id, destination, content }) => {
+                        Request::Message(ChatMessage { author_id, author_username, destination, content }) => {
                             let response = Response::Message(ChatMessage{
                                 author_id,
+                                author_username,
                                 destination,
                                 content,
                             });

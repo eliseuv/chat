@@ -11,8 +11,9 @@ const DEFAULT_SERVER_ADDRESS: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
 /// Default server port
 const DEFAULT_SERVER_PORT: u16 = 6969;
 
-/// Server Command Line Arguments
+/// Chat Café Command Line Arguments
 #[derive(Parser)]
+#[command(name = "Chat Café", about = "A cozy terminal TUI chat client")]
 struct Args {
     /// Server address
     #[arg(short, long, default_value_t = DEFAULT_SERVER_ADDRESS)]

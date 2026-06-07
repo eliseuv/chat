@@ -5,7 +5,6 @@ use std::{
     fmt::Display,
     net::SocketAddr,
     sync::atomic::{self, AtomicU64},
-    task::Context,
 };
 
 use tokio::{
@@ -20,7 +19,7 @@ use tokio_util::codec::Framed;
 
 use crate::protocol::{ChatMessage, ClientRequest, MessageDestination, Request, Response};
 use crate::remote::codec::ServerCodec;
-use crate::remote::packet::{ServerCommand, ServerMessage, ServerRemotePacket};
+use crate::remote::packet::{ClientMessage, ServerCommand, ServerMessage, ServerRemotePacket};
 
 /// Client ID counter
 static CLIENT_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -53,6 +52,8 @@ pub struct Client {
     pub cmd_tx: mpsc::Sender<ClientRequest>,
     /// Broadcast receiver
     pub bcast_rx: broadcast::Receiver<Response>,
+    /// Client username chosen on login
+    pub username: Option<String>,
 }
 
 impl Display for Client {
@@ -81,6 +82,7 @@ impl Client {
             stream,
             cmd_tx,
             bcast_rx: bcast_tx.subscribe(),
+            username: None,
         }
     }
 
@@ -88,13 +90,8 @@ impl Client {
         let client_name = self.to_string();
         log::info!("[{client_name}] Started");
 
-        match self
-            .cmd_tx
-            .send(self.identity.wrap_request(Request::Connect))
-            .await
-        {
-            Err(e) => bail!("Failed to send connect request: {e}"),
-            Ok(_) => log::info!("[{client_name}] Connected"),
+        if let Err(e) = self.cmd_tx.send(self.identity.wrap_request(Request::GetActiveUsers)).await {
+            log::error!("[{client_name}] Failed to request initial active users list: {e}");
         }
 
         let mut framed = Framed::new(self.stream, ServerCodec::new());
@@ -123,17 +120,43 @@ impl Client {
                                 let rtt = Utc::now().timestamp_millis() - packet.timestamp;
                                 log::debug!("[{client_name}] Roundtrip time: {rtt}ms");
 
-                                // Request the server to route the message to other peers
-                                let request = Request::Message(
-                                    ChatMessage {
-                                        author_id: self.identity.id,
-                                        destination: MessageDestination::AllUsers,
-                                        content: packet.message_content,
+                                match packet.message {
+                                    ClientMessage::Login(username) => {
+                                        if self.username.is_some() {
+                                            log::warn!("[{client_name}] Already logged in; ignoring login packet.");
+                                            continue;
+                                        }
+                                        self.username = Some(username.clone());
+                                        match self
+                                            .cmd_tx
+                                            .send(self.identity.wrap_request(Request::Connect { username }))
+                                            .await
+                                        {
+                                            Err(e) => {
+                                                log::error!("[{client_name}] Failed to send connect request: {e}");
+                                                break;
+                                            }
+                                            Ok(_) => log::info!("[{client_name}] Sent login request to server core"),
+                                        }
                                     }
-                                );
-                                if let Err(e) = self.cmd_tx.send(self.identity.wrap_request(request)).await {
-                                    log::error!("[{client_name}] Failed to forward request to server core: {e}");
-                                    break;
+                                    ClientMessage::Chat(message_content) => {
+                                        if let Some(ref username) = self.username {
+                                            let request = Request::Message(
+                                                ChatMessage {
+                                                    author_id: self.identity.id,
+                                                    author_username: username.clone(),
+                                                    destination: MessageDestination::AllUsers,
+                                                    content: message_content,
+                                                }
+                                            );
+                                            if let Err(e) = self.cmd_tx.send(self.identity.wrap_request(request)).await {
+                                                log::error!("[{client_name}] Failed to forward request to server core: {e}");
+                                                break;
+                                            }
+                                        } else {
+                                            log::warn!("[{client_name}] Received Chat message before login; ignoring.");
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -156,16 +179,39 @@ impl Client {
 
                             match response {
                                 Response::Welcome(client_id) => {
+                                     if client_id == self.identity.id {
+                                         let remote_msg = ServerMessage::Command(ServerCommand::Welcome(client_id));
+                                         let packet = ServerRemotePacket::new(remote_msg);
+                                         if let Err(e) = framed.send(packet).await {
+                                             log::error!("[{client_name}] Failed to send welcome message to client: {e}");
+                                             break;
+                                         }
+                                     }
+                                     else {
+                                         continue;
+                                     }
+                                 }
+
+                                Response::LoginReject { client_id, error } => {
                                     if client_id == self.identity.id {
-                                        let remote_msg = ServerMessage::Command(ServerCommand::Welcome(client_id));
+                                        self.username = None;
+                                        let remote_msg = ServerMessage::Command(ServerCommand::LoginError(error));
                                         let packet = ServerRemotePacket::new(remote_msg);
                                         if let Err(e) = framed.send(packet).await {
-                                            log::error!("[{client_name}] Failed to send welcome message to client: {e}");
+                                            log::error!("[{client_name}] Failed to send login reject to client: {e}");
                                             break;
                                         }
-                                    }
-                                    else {
+                                    } else {
                                         continue;
+                                    }
+                                }
+
+                                Response::ActiveUsers { usernames } => {
+                                    let remote_msg = ServerMessage::Command(ServerCommand::ActiveUsers { usernames });
+                                    let packet = ServerRemotePacket::new(remote_msg);
+                                    if let Err(e) = framed.send(packet).await {
+                                        log::error!("[{client_name}] Failed to send active users to client: {e}");
+                                        break;
                                     }
                                 }
 
@@ -185,11 +231,13 @@ impl Client {
                                 Response::Message(chat_message) => {
                                     match chat_message.destination {
                                         MessageDestination::AllUsers => {
-                                            let remote_msg = ServerMessage::Chat(chat_message);
-                                            let packet = ServerRemotePacket::new(remote_msg);
-                                            if let Err(e) = framed.send(packet).await {
-                                                log::error!("[{client_name}] Failed to send message to client: {e}");
-                                                break;
+                                            if self.username.is_some() {
+                                                let remote_msg = ServerMessage::Chat(chat_message);
+                                                let packet = ServerRemotePacket::new(remote_msg);
+                                                if let Err(e) = framed.send(packet).await {
+                                                    log::error!("[{client_name}] Failed to send message to client: {e}");
+                                                    break;
+                                                }
                                             }
                                         }
                                     }
