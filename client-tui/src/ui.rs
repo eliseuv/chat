@@ -37,6 +37,7 @@ const MOCHA_TEAL: Color = Color::Rgb(148, 226, 213);
 const MOCHA_SAPPHIRE: Color = Color::Rgb(116, 199, 236);
 #[allow(dead_code)]
 const MOCHA_BLUE: Color = Color::Rgb(137, 180, 250);
+#[allow(dead_code)]
 const MOCHA_LAVENDER: Color = Color::Rgb(180, 190, 254);
 
 /// Represents a high-level application event abstracted from raw terminal input.
@@ -261,7 +262,11 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
                     let chunks = Layout::default()
                         .direction(Direction::Vertical)
                         .margin(0)
-                        .constraints([Constraint::Min(1), Constraint::Length(input_height)].as_ref())
+                        .constraints([
+                            Constraint::Length(1),                  // Little header
+                            Constraint::Min(1),                     // Main chat + sidebar body
+                            Constraint::Length(input_height),       // Input field
+                        ].as_ref())
                         .split(f.area());
 
                     let (history_area, users_area) = if f.area().width >= 60 {
@@ -271,10 +276,10 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
                                 Constraint::Min(0),
                                 Constraint::Length(25),
                             ].as_ref())
-                            .split(chunks[0]);
+                            .split(chunks[1]);
                         (body_chunks[0], Some(body_chunks[1]))
                     } else {
-                        (chunks[0], None)
+                        (chunks[1], None)
                     };
 
                     let mut list_items = Vec::new();
@@ -349,7 +354,6 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
 
                     let history_list = List::new(list_items)
                         .block(Block::default()
-                            .title(Span::styled(" Chat History ", Style::default().fg(MOCHA_LAVENDER).add_modifier(Modifier::BOLD)))
                             .borders(Borders::ALL)
                             .border_style(Style::default().fg(MOCHA_SURFACE1))
                         );
@@ -383,14 +387,19 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
                         f.render_widget(users_list, area);
                     }
 
+                    let header = Paragraph::new(Line::from(vec![
+                        Span::styled(" CHAT CAFE", Style::default().fg(MOCHA_MAUVE).add_modifier(Modifier::BOLD)),
+                    ]))
+                    .alignment(ratatui::layout::Alignment::Left);
+                    f.render_widget(header, chunks[0]);
+
                     let input_paragraph = Paragraph::new(wrapped_prompt)
                         .block(Block::default()
-                            .title(Span::styled(" Input ", Style::default().fg(MOCHA_PEACH).add_modifier(Modifier::BOLD)))
                             .borders(Borders::ALL)
                             .border_style(Style::default().fg(MOCHA_SURFACE1))
                         )
                         .style(Style::default().fg(MOCHA_TEXT));
-                    f.render_widget(input_paragraph, chunks[1]);
+                    f.render_widget(input_paragraph, chunks[2]);
                 }
                 _ => {}
             }
