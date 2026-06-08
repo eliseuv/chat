@@ -5,6 +5,11 @@ edition = "2024"
 description.workspace = true
 authors.workspace = true
 
+[[bin]]
+name = "client-tui"
+path = "src/bin/main.rs"
+
+
 [dependencies]
 
 # Chat server

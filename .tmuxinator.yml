@@ -11,6 +11,6 @@ windows:
   - test:
       layout: even-horizontal
       panes:
-        - export RUST_LOG=debug && cargo run -p server --bin main -- --address=127.0.0.1 --port 6969
+        - export RUST_LOG=debug && cargo run -p server --bin server -- --address=127.0.0.1 --port 6969
         - cargo run -p client-tui -- --address=127.0.0.1 --port 6969
         - cargo run -p client-tui -- --address=127.0.0.1 --port 6969
