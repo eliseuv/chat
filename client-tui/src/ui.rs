@@ -264,6 +264,19 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
                         .constraints([Constraint::Min(1), Constraint::Length(input_height)].as_ref())
                         .split(f.area());
 
+                    let (history_area, users_area) = if f.area().width >= 60 {
+                        let body_chunks = Layout::default()
+                            .direction(Direction::Horizontal)
+                            .constraints([
+                                Constraint::Min(0),
+                                Constraint::Length(25),
+                            ].as_ref())
+                            .split(chunks[0]);
+                        (body_chunks[0], Some(body_chunks[1]))
+                    } else {
+                        (chunks[0], None)
+                    };
+
                     let mut list_items = Vec::new();
                     for msg in &history.messages {
                         let time_str = msg
@@ -341,7 +354,34 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
                             .border_style(Style::default().fg(MOCHA_SURFACE1))
                         );
 
-                    f.render_stateful_widget(history_list, chunks[0], &mut state);
+                    f.render_stateful_widget(history_list, history_area, &mut state);
+
+                    if let Some(area) = users_area {
+                        let active_title = Span::styled(
+                            format!(" Users ({}) ", history.active_usernames.len()),
+                            Style::default().fg(MOCHA_TEAL).add_modifier(Modifier::BOLD)
+                        );
+                        let mut user_items = Vec::new();
+                        for user in &history.active_usernames {
+                            let is_me = history.own_username.as_ref().map_or(false, |own| own == user);
+                            let span_color = if is_me { MOCHA_PEACH } else { MOCHA_TEXT };
+                            let mut line_spans = vec![
+                                Span::styled("• ", Style::default().fg(if is_me { MOCHA_PEACH } else { MOCHA_TEAL })),
+                                Span::styled(user, Style::default().fg(span_color)),
+                            ];
+                            if is_me {
+                                line_spans.push(Span::styled(" (you)", Style::default().fg(MOCHA_SUBTEXT0).add_modifier(Modifier::ITALIC)));
+                            }
+                            user_items.push(ListItem::new(Line::from(line_spans)));
+                        }
+                        let users_list = List::new(user_items)
+                            .block(Block::default()
+                                .title(active_title)
+                                .borders(Borders::ALL)
+                                .border_style(Style::default().fg(MOCHA_SURFACE1))
+                            );
+                        f.render_widget(users_list, area);
+                    }
 
                     let input_paragraph = Paragraph::new(wrapped_prompt)
                         .block(Block::default()
