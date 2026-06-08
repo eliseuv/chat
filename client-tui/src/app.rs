@@ -171,6 +171,7 @@ impl ChatApp {
                                                 ServerCommand::ActiveUsers { usernames } => {
                                                     self.history.active_usernames = usernames.clone();
                                                 }
+                                                ServerCommand::Joined(_) => {}
                                                 _ => {}
                                             }
                                         }

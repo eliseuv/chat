@@ -298,6 +298,14 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
                                 ServerCommand::ActiveUsers { .. } => {
                                     continue;
                                 }
+                                ServerCommand::Joined(username) => {
+                                    vec![
+                                        Span::styled(format!("[{}] ", time_str), Style::default().fg(MOCHA_OVERLAY0)),
+                                        Span::styled("[SERVER]: ", Style::default().fg(MOCHA_YELLOW).add_modifier(Modifier::BOLD)),
+                                        Span::styled(username.clone(), Style::default().fg(MOCHA_TEAL).add_modifier(Modifier::BOLD)),
+                                        Span::styled(" joined the chat!", Style::default().fg(MOCHA_TEXT)),
+                                    ]
+                                }
                                 ServerCommand::Disconnect => {
                                     vec![
                                         Span::styled(format!("[{}] ", time_str), Style::default().fg(MOCHA_OVERLAY0)),

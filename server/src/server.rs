@@ -69,9 +69,15 @@ impl Server {
                                 };
                                 let _ = self.bcast_tx.send(response);
                             } else {
-                                self.active_users.insert(client_id, username);
+                                self.active_users.insert(client_id, username.clone());
                                 let response = Response::Welcome(client_id);
                                 let _ = self.bcast_tx.send(response);
+
+                                // Broadcast that the user joined!
+                                let joined_response = Response::Joined {
+                                    username: username.clone(),
+                                };
+                                let _ = self.bcast_tx.send(joined_response);
 
                                 // Broadcast the updated active users list!
                                 let active_usernames: Vec<String> = self.active_users.values().cloned().collect();

@@ -16,6 +16,8 @@ pub enum ServerCommand {
     LoginError(LoginError),
     /// Tells the client about the current active usernames.
     ActiveUsers { usernames: Vec<String> },
+    /// Indicates that a user has joined the chat room.
+    Joined(String),
     /// Indicates the server is actively dropping the client's connection.
     Disconnect,
 }

@@ -101,6 +101,8 @@ pub enum Response {
     LoginReject { client_id: u64, error: LoginError },
     /// Tells the client about the current active usernames.
     ActiveUsers { usernames: Vec<String> },
+    /// Indicates that a user joined the chat room.
+    Joined { username: String },
     /// Instructs the client to close the connection.
     Disconnect(SocketAddr),
     /// A routed message originating from another peer on the network.
