@@ -167,18 +167,12 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
                         ].as_ref())
                         .split(f.area());
 
-                    // Top Banner (ASCII Art with padding)
-                    let ascii_lines = vec![
-                        Line::default(), // Top padding
-                        Line::from(Span::styled(" ░▒▓██████▓▒░░▒▓█▓▒░░▒▓█▓▒░░▒▓██████▓▒░▒▓████████▓▒░       ░▒▓██████▓▒░ ░▒▓██████▓▒░░▒▓████████▓▒░▒▓████████▓▒░ ", Style::default().fg(MOCHA_MAUVE))),
-                        Line::from(Span::styled("░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░          ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░        ", Style::default().fg(MOCHA_MAUVE))),
-                        Line::from(Span::styled("░▒▓█▓▒░      ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░          ░▒▓█▓▒░      ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░        ", Style::default().fg(MOCHA_MAUVE))),
-                        Line::from(Span::styled("░▒▓█▓▒░      ░▒▓████████▓▒░▒▓████████▓▒░ ░▒▓█▓▒░          ░▒▓█▓▒░      ░▒▓████████▓▒░▒▓██████▓▒░ ░▒▓██████▓▒░   ", Style::default().fg(MOCHA_MAUVE))),
-                        Line::from(Span::styled("░▒▓█▓▒░      ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░          ░▒▓█▓▒░      ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░        ", Style::default().fg(MOCHA_MAUVE))),
-                        Line::from(Span::styled("░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░          ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░        ", Style::default().fg(MOCHA_MAUVE))),
-                        Line::from(Span::styled(" ░▒▓██████▓▒░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░           ░▒▓██████▓▒░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓████████▓▒░ ", Style::default().fg(MOCHA_MAUVE))),
-                        Line::default(), // Bottom padding
-                    ];
+                    // Top Banner (ASCII Art with padding from client-tui/assets/title.txt)
+                    let mut ascii_lines = vec![Line::default()]; // Top padding
+                    for line in include_str!("../assets/title.txt").lines() {
+                        ascii_lines.push(Line::from(Span::styled(line, Style::default().fg(MOCHA_MAUVE))));
+                    }
+                    ascii_lines.push(Line::default()); // Bottom padding
                     let title = Paragraph::new(ascii_lines)
                         .alignment(ratatui::layout::Alignment::Center)
                         .block(Block::default().borders(Borders::NONE));
