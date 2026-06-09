@@ -1,7 +1,8 @@
 use crate::history::ChatHistory;
 use crate::app::State;
 use crate::ui::theme::*;
-use crate::ui::layout::{centered_rect, make_keybindings_footer, wrap_text};
+use crate::ui::layout::{centered_rect, make_keybindings_footer};
+use crate::ui::prompt::InputPrompt;
 use anyhow::Context;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
@@ -105,14 +106,8 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
                         .block(Block::default().borders(Borders::NONE));
                     f.render_widget(instructions, form_chunks[0]);
 
-                    let prompt_text = format!("> {}", input_buffer);
-                    let input_box = Paragraph::new(prompt_text)
-                        .block(Block::default()
-                            .title(Span::styled(" Choose Username ", Style::default().fg(MOCHA_PEACH).add_modifier(Modifier::BOLD)))
-                            .borders(Borders::ALL)
-                            .border_style(Style::default().fg(MOCHA_SURFACE1))
-                        )
-                        .style(Style::default().fg(MOCHA_TEXT));
+                    let input_box = InputPrompt::new(input_buffer)
+                        .title(Span::styled(" Choose Username ", Style::default().fg(MOCHA_PEACH).add_modifier(Modifier::BOLD)));
                     f.render_widget(input_box, form_chunks[1]);
 
                     // Right Side: Active Users List
@@ -148,9 +143,8 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
                     f.render_widget(footer, main_chunks[2]);
                 }
                 State::ChatRoom => {
-                    let prompt_text = format!("> {}", input_buffer);
-                    let (wrapped_prompt, input_lines) = wrap_text(&prompt_text, width);
-                    let input_height = (input_lines as u16).clamp(1, 5) + 2; // Clamp text to 1-5 lines, add 2 for borders
+                    let prompt_widget = InputPrompt::new(input_buffer);
+                    let input_height = prompt_widget.lines_required(width);
 
                     let chunks = Layout::default()
                         .direction(Direction::Vertical)
@@ -287,13 +281,7 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
                     .alignment(ratatui::layout::Alignment::Left);
                     f.render_widget(header, chunks[0]);
 
-                    let input_paragraph = Paragraph::new(wrapped_prompt)
-                        .block(Block::default()
-                            .borders(Borders::ALL)
-                            .border_style(Style::default().fg(MOCHA_SURFACE1))
-                        )
-                        .style(Style::default().fg(MOCHA_TEXT));
-                    f.render_widget(input_paragraph, chunks[2]);
+                    f.render_widget(prompt_widget, chunks[2]);
 
                     let footer = Paragraph::new(make_keybindings_footer(&[
                         ("Enter", "send", MOCHA_PEACH),
