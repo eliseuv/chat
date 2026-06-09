@@ -305,6 +305,7 @@ dependencies = [
  "log4rs",
  "ratatui",
  "serde",
+ "serde_yaml",
  "server",
  "thiserror 2.0.18",
  "tokio",
