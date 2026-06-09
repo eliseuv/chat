@@ -1,141 +1,21 @@
 use crate::history::ChatHistory;
 use crate::app::State;
+use crate::ui::theme::*;
+use crate::ui::layout::{centered_rect, make_keybindings_footer, wrap_text};
 use anyhow::Context;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
-use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
 use ratatui::crossterm::{execute, tty::IsTty};
 use ratatui::layout::{Constraint, Direction, Layout};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
 use server::protocol::{ChatMessage, MessageContent};
 use server::remote::packet::{ServerCommand, ServerMessage};
 use std::io;
-use tokio::sync::mpsc;
-
-// Catppuccin Mocha color palette constants
-#[allow(dead_code)]
-const MOCHA_BASE: Color = Color::Rgb(30, 30, 46);
-const MOCHA_TEXT: Color = Color::Rgb(205, 214, 244);
-const MOCHA_SUBTEXT0: Color = Color::Rgb(166, 173, 200);
-const MOCHA_OVERLAY0: Color = Color::Rgb(108, 112, 134);
-#[allow(dead_code)]
-const MOCHA_SURFACE0: Color = Color::Rgb(49, 50, 68);
-const MOCHA_SURFACE1: Color = Color::Rgb(69, 71, 90);
-
-const MOCHA_MAUVE: Color = Color::Rgb(203, 166, 247);
-const MOCHA_RED: Color = Color::Rgb(243, 139, 168);
-const MOCHA_PEACH: Color = Color::Rgb(250, 179, 135);
-const MOCHA_YELLOW: Color = Color::Rgb(249, 226, 175);
-const MOCHA_GREEN: Color = Color::Rgb(166, 227, 161);
-const MOCHA_TEAL: Color = Color::Rgb(148, 226, 213);
-#[allow(dead_code)]
-const MOCHA_SAPPHIRE: Color = Color::Rgb(116, 199, 236);
-#[allow(dead_code)]
-const MOCHA_BLUE: Color = Color::Rgb(137, 180, 250);
-#[allow(dead_code)]
-const MOCHA_LAVENDER: Color = Color::Rgb(180, 190, 254);
-
-/// Represents a high-level application event abstracted from raw terminal input.
-///
-/// This enum simplifies raw key strokes and terminal events into semantically
-/// meaningful actions that the application loop can easily process.
-pub enum AppEvent {
-    /// An ignored or unhandled terminal event.
-    None,
-    /// A signal to quit the application (e.g., `Ctrl-Q`).
-    Quit,
-    /// A cancel/escape event (e.g., `Esc`).
-    Cancel,
-    /// A standard character input typed by the user.
-    InputChar(char),
-    /// A backspace keystroke to delete the last character.
-    Backspace,
-    /// An enter/return keystroke to submit a message.
-    Enter,
-    /// A terminal resize event requiring a UI redraw.
-    Resize,
-}
-
-/// A stream wrapper that reads raw terminal events and translates them into `AppEvent`s.
-pub struct UiEventStream {
-    rx: mpsc::UnboundedReceiver<anyhow::Result<AppEvent>>,
-}
-
-impl UiEventStream {
-    /// Initializes a new `UiEventStream` connected to the standard terminal event stream.
-    pub fn new() -> Self {
-        let (tx, rx) = mpsc::unbounded_channel();
-
-        std::thread::spawn(move || {
-            loop {
-                match event::read() {
-                    Ok(Event::Key(key_event)) if key_event.kind == KeyEventKind::Press => {
-                        let app_event = if key_event.modifiers.contains(KeyModifiers::CONTROL)
-                            && (key_event.code == KeyCode::Char('q') || key_event.code == KeyCode::Char('Q'))
-                        {
-                            AppEvent::Quit
-                        } else {
-                            match key_event.code {
-                                KeyCode::Char(c) => {
-                                    // Ignore character key events that contain Control or Alt modifiers,
-                                    // to avoid printing control characters to the buffer.
-                                    if key_event.modifiers.contains(KeyModifiers::CONTROL)
-                                        || key_event.modifiers.contains(KeyModifiers::ALT)
-                                    {
-                                        AppEvent::None
-                                    } else {
-                                        AppEvent::InputChar(c)
-                                    }
-                                }
-                                KeyCode::Backspace => AppEvent::Backspace,
-                                KeyCode::Enter => AppEvent::Enter,
-                                KeyCode::Esc => AppEvent::Cancel,
-                                _ => AppEvent::None,
-                            }
-                        };
-                        if tx.send(Ok(app_event)).is_err() {
-                            break;
-                        }
-                    }
-                    Ok(Event::Resize(_, _)) => {
-                        if tx.send(Ok(AppEvent::Resize)).is_err() {
-                            break;
-                        }
-                    }
-                    Ok(_) => {
-                        if tx.send(Ok(AppEvent::None)).is_err() {
-                            break;
-                        }
-                    }
-                    Err(e) => {
-                        let _ = tx.send(Err(e.into()));
-                        break;
-                    }
-                }
-            }
-        });
-
-        Self { rx }
-    }
-
-    /// Asynchronously waits for and returns the next parsed `AppEvent`.
-    ///
-    /// Intercepts special control sequences like `Ctrl-C` to trigger a `Quit` event.
-    pub async fn next(&mut self) -> Option<anyhow::Result<AppEvent>> {
-        self.rx.recv().await
-    }
-}
-
-impl Default for UiEventStream {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 /// The main interface for managing terminal output and rendering the chat UI.
 ///
@@ -188,7 +68,7 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
 
                     // Top Banner (ASCII Art with padding from client-tui/assets/title.txt)
                     let mut ascii_lines = vec![Line::default()]; // Top padding
-                    for line in include_str!("../assets/title.txt").lines() {
+                    for line in include_str!("../../assets/title.txt").lines() {
                         ascii_lines.push(Line::from(Span::styled(line, Style::default().fg(MOCHA_MAUVE))));
                     }
                     ascii_lines.push(Line::default()); // Bottom padding
@@ -471,122 +351,4 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> Drop for ChatI
             log::error!("Unable to leave alternate screen: {}", e);
         }
     }
-}
-
-/// Simulates word wrapping on the input buffer and returns the wrapped string and line count.
-fn wrap_text(text: &str, max_width: usize) -> (String, usize) {
-    if max_width == 0 {
-        return (text.to_string(), 1);
-    }
-    
-    let mut words = Vec::new();
-    let mut current_word = String::new();
-    for c in text.chars() {
-        if c == ' ' {
-            if !current_word.is_empty() {
-                words.push(current_word.clone());
-                current_word.clear();
-            }
-            words.push(" ".to_string());
-        } else {
-            current_word.push(c);
-        }
-    }
-    if !current_word.is_empty() {
-        words.push(current_word);
-    }
-    
-    let mut wrapped = String::new();
-    let mut current_line_len = 0;
-    let mut line_count = 0;
-    
-    for word in words {
-        let word_width = word.chars().count();
-        
-        if current_line_len + word_width <= max_width {
-            wrapped.push_str(&word);
-            current_line_len += word_width;
-        } else {
-            if word_width > max_width {
-                // Word is wider than max_width. We must split it.
-                let remaining = max_width.saturating_sub(current_line_len);
-                let mut chars = word.chars();
-                
-                // Fill the rest of the current line first
-                if remaining > 0 {
-                    let first_part: String = chars.by_ref().take(remaining).collect();
-                    wrapped.push_str(&first_part);
-                }
-                
-                // Start a new line for the rest
-                wrapped.push('\n');
-                line_count += 1;
-                current_line_len = 0;
-                
-                // Keep chunking the rest of the word
-                let mut chunk = String::new();
-                for c in chars {
-                    chunk.push(c);
-                    if chunk.chars().count() == max_width {
-                        wrapped.push_str(&chunk);
-                        wrapped.push('\n');
-                        line_count += 1;
-                        chunk.clear();
-                    }
-                }
-                if !chunk.is_empty() {
-                    wrapped.push_str(&chunk);
-                    current_line_len = chunk.chars().count();
-                }
-            } else {
-                // Normal wrap at word boundary
-                if !wrapped.is_empty() && !wrapped.ends_with('\n') {
-                    wrapped.push('\n');
-                    line_count += 1;
-                }
-                wrapped.push_str(&word);
-                current_line_len = word_width;
-            }
-        }
-    }
-    
-    if current_line_len > 0 || line_count == 0 {
-        line_count += 1;
-    }
-    
-    (wrapped, line_count)
-}
-
-/// Helper function to create a centered rect of a specific size inside a parent rect.
-fn centered_rect(width: u16, height: u16, r: ratatui::layout::Rect) -> ratatui::layout::Rect {
-    let popup_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(r.height.saturating_sub(height) / 2),
-            Constraint::Length(height),
-            Constraint::Min(0),
-        ])
-        .split(r);
-
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Length(r.width.saturating_sub(width) / 2),
-            Constraint::Length(width),
-            Constraint::Min(0),
-        ])
-        .split(popup_layout[1])[1]
-}
-
-/// Helper function to dynamically construct a footer line showing colored keybindings with dim descriptions.
-fn make_keybindings_footer<'a>(bindings: &[(&'a str, &'a str, Color)]) -> Line<'a> {
-    let mut spans = Vec::new();
-    for (i, &(key, desc, color)) in bindings.iter().enumerate() {
-        if i > 0 {
-            spans.push(Span::styled("  |  ", Style::default().fg(MOCHA_SUBTEXT0)));
-        }
-        spans.push(Span::styled(key, Style::default().fg(color).add_modifier(Modifier::BOLD)));
-        spans.push(Span::styled(format!(" {}", desc), Style::default().fg(MOCHA_SUBTEXT0)));
-    }
-    Line::from(spans)
 }
