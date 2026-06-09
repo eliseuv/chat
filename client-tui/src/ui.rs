@@ -11,7 +11,7 @@ use ratatui::crossterm::{execute, tty::IsTty};
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
+use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
 use server::protocol::{ChatMessage, MessageContent};
 use server::remote::packet::{ServerCommand, ServerMessage};
 use std::io;
@@ -47,8 +47,10 @@ const MOCHA_LAVENDER: Color = Color::Rgb(180, 190, 254);
 pub enum AppEvent {
     /// An ignored or unhandled terminal event.
     None,
-    /// A signal to quit the application (e.g., `Esc` or `Ctrl-C`).
+    /// A signal to quit the application (e.g., `Ctrl-Q`).
     Quit,
+    /// A cancel/escape event (e.g., `Esc`).
+    Cancel,
     /// A standard character input typed by the user.
     InputChar(char),
     /// A backspace keystroke to delete the last character.
@@ -74,15 +76,25 @@ impl UiEventStream {
                 match event::read() {
                     Ok(Event::Key(key_event)) if key_event.kind == KeyEventKind::Press => {
                         let app_event = if key_event.modifiers.contains(KeyModifiers::CONTROL)
-                            && key_event.code == KeyCode::Char('c')
+                            && (key_event.code == KeyCode::Char('q') || key_event.code == KeyCode::Char('Q'))
                         {
                             AppEvent::Quit
                         } else {
                             match key_event.code {
-                                KeyCode::Char(c) => AppEvent::InputChar(c),
+                                KeyCode::Char(c) => {
+                                    // Ignore character key events that contain Control or Alt modifiers,
+                                    // to avoid printing control characters to the buffer.
+                                    if key_event.modifiers.contains(KeyModifiers::CONTROL)
+                                        || key_event.modifiers.contains(KeyModifiers::ALT)
+                                    {
+                                        AppEvent::None
+                                    } else {
+                                        AppEvent::InputChar(c)
+                                    }
+                                }
                                 KeyCode::Backspace => AppEvent::Backspace,
                                 KeyCode::Enter => AppEvent::Enter,
-                                KeyCode::Esc => AppEvent::Quit,
+                                KeyCode::Esc => AppEvent::Cancel,
                                 _ => AppEvent::None,
                             }
                         };
@@ -153,7 +165,13 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
     /// * `state` - The current application state.
     /// * `history` - The collection of received chat messages.
     /// * `input_buffer` - The current text the user is typing.
-    pub fn draw(&mut self, state: State, history: &ChatHistory, input_buffer: &str) -> anyhow::Result<()> {
+    pub fn draw(
+        &mut self,
+        state: State,
+        history: &ChatHistory,
+        input_buffer: &str,
+        show_confirm_quit: bool,
+    ) -> anyhow::Result<()> {
         self.terminal.draw(|f| {
             let width = f.area().width.saturating_sub(2) as usize;
             match state {
@@ -242,15 +260,10 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
                     f.render_widget(users_list, body_chunks[1]);
 
                     // Footer
-                    let footer = Paragraph::new(vec![
-                        Line::from(vec![
-                            Span::styled("Press ", Style::default().fg(MOCHA_SUBTEXT0)),
-                            Span::styled("Enter", Style::default().fg(MOCHA_PEACH).add_modifier(Modifier::BOLD)),
-                            Span::styled(" to join  |  Press ", Style::default().fg(MOCHA_SUBTEXT0)),
-                            Span::styled("Esc", Style::default().fg(MOCHA_RED).add_modifier(Modifier::BOLD)),
-                            Span::styled(" to quit", Style::default().fg(MOCHA_SUBTEXT0)),
-                        ])
-                    ])
+                    let footer = Paragraph::new(make_keybindings_footer(&[
+                        ("Enter", "join", MOCHA_PEACH),
+                        ("Ctrl+Q", "quit", MOCHA_RED),
+                    ]))
                     .alignment(ratatui::layout::Alignment::Center);
                     f.render_widget(footer, main_chunks[2]);
                 }
@@ -266,6 +279,7 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
                             Constraint::Length(1),                  // Little header
                             Constraint::Min(1),                     // Main chat + sidebar body
                             Constraint::Length(input_height),       // Input field
+                            Constraint::Length(1),                  // Footer tips
                         ].as_ref())
                         .split(f.area());
 
@@ -400,8 +414,44 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
                         )
                         .style(Style::default().fg(MOCHA_TEXT));
                     f.render_widget(input_paragraph, chunks[2]);
+
+                    let footer = Paragraph::new(make_keybindings_footer(&[
+                        ("Enter", "send", MOCHA_PEACH),
+                        ("Ctrl+Q", "exit", MOCHA_RED),
+                    ]))
+                    .alignment(ratatui::layout::Alignment::Center);
+                    f.render_widget(footer, chunks[3]);
                 }
                 _ => {}
+            }
+
+            if show_confirm_quit {
+                let area = f.area();
+                let popup_area = centered_rect(46, 8, area);
+                f.render_widget(Clear, popup_area);
+                
+                let popup_block = Block::default()
+                    .title(Span::styled(" Confirm Exit ", Style::default().fg(MOCHA_RED).add_modifier(Modifier::BOLD)))
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(MOCHA_RED));
+                
+                let text = vec![
+                    Line::default(),
+                    Line::from(Span::styled("Are you sure you want to exit?", Style::default().fg(MOCHA_TEXT))),
+                    Line::default(),
+                    Line::from(vec![
+                        Span::styled("  [Y] ", Style::default().fg(MOCHA_GREEN).add_modifier(Modifier::BOLD)),
+                        Span::styled("Yes, Exit   ", Style::default().fg(MOCHA_SUBTEXT0)),
+                        Span::styled("[N] ", Style::default().fg(MOCHA_RED).add_modifier(Modifier::BOLD)),
+                        Span::styled("No, Stay  ", Style::default().fg(MOCHA_SUBTEXT0)),
+                    ]),
+                ];
+                
+                let paragraph = Paragraph::new(text)
+                    .block(popup_block)
+                    .alignment(ratatui::layout::Alignment::Center);
+                
+                f.render_widget(paragraph, popup_area);
             }
         })?;
         Ok(())
@@ -505,4 +555,38 @@ fn wrap_text(text: &str, max_width: usize) -> (String, usize) {
     }
     
     (wrapped, line_count)
+}
+
+/// Helper function to create a centered rect of a specific size inside a parent rect.
+fn centered_rect(width: u16, height: u16, r: ratatui::layout::Rect) -> ratatui::layout::Rect {
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(r.height.saturating_sub(height) / 2),
+            Constraint::Length(height),
+            Constraint::Min(0),
+        ])
+        .split(r);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(r.width.saturating_sub(width) / 2),
+            Constraint::Length(width),
+            Constraint::Min(0),
+        ])
+        .split(popup_layout[1])[1]
+}
+
+/// Helper function to dynamically construct a footer line showing colored keybindings with dim descriptions.
+fn make_keybindings_footer<'a>(bindings: &[(&'a str, &'a str, Color)]) -> Line<'a> {
+    let mut spans = Vec::new();
+    for (i, &(key, desc, color)) in bindings.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::styled("  |  ", Style::default().fg(MOCHA_SUBTEXT0)));
+        }
+        spans.push(Span::styled(key, Style::default().fg(color).add_modifier(Modifier::BOLD)));
+        spans.push(Span::styled(format!(" {}", desc), Style::default().fg(MOCHA_SUBTEXT0)));
+    }
+    Line::from(spans)
 }

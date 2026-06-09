@@ -26,6 +26,7 @@ pub struct ChatApp {
     input_buffer: String,
     history: ChatHistory,
     interface: ChatInterface<io::Stdout>,
+    is_confirming_quit: bool,
 }
 
 impl ChatApp {
@@ -42,6 +43,7 @@ impl ChatApp {
                 active_usernames: Vec::new(),
             },
             interface: ChatInterface::new(io::stdout())?,
+            is_confirming_quit: false,
         })
     }
 
@@ -70,16 +72,36 @@ impl ChatApp {
     }
 
     pub fn draw(&mut self) -> anyhow::Result<()> {
-        self.interface.draw(self.state, &self.history, &self.input_buffer)
+        self.interface.draw(self.state, &self.history, &self.input_buffer, self.is_confirming_quit)
     }
 
     async fn handle_event(&mut self, event: AppEvent) -> anyhow::Result<()> {
+        if self.is_confirming_quit {
+            match event {
+                AppEvent::InputChar('y') | AppEvent::InputChar('Y') => {
+                    self.state = State::Quit;
+                }
+                AppEvent::InputChar('n') | AppEvent::InputChar('N') | AppEvent::Cancel => {
+                    self.is_confirming_quit = false;
+                    self.draw()?;
+                }
+                AppEvent::Resize => {
+                    self.draw()?;
+                }
+                _ => {}
+            }
+            return Ok(());
+        }
+
         match event {
             AppEvent::None => {}
 
             AppEvent::Quit => {
-                self.state = State::Quit;
+                self.is_confirming_quit = true;
+                self.draw()?;
             }
+
+            AppEvent::Cancel => {}
 
             AppEvent::InputChar(c) => {
                 self.input_buffer.push(c);
