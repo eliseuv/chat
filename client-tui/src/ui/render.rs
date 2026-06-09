@@ -1,8 +1,10 @@
 use crate::history::ChatHistory;
 use crate::app::State;
 use crate::ui::theme::*;
-use crate::ui::layout::{centered_rect, make_keybindings_footer};
+use crate::ui::layout::make_keybindings_footer;
 use crate::ui::prompt::InputPrompt;
+use crate::ui::users_list::ActiveUsersList;
+use crate::ui::confirm_exit::ConfirmExitPopup;
 use anyhow::Context;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
@@ -13,7 +15,7 @@ use ratatui::crossterm::{execute, tty::IsTty};
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
+use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 use server::protocol::{ChatMessage, MessageContent};
 use server::remote::packet::{ServerCommand, ServerMessage};
 use std::io;
@@ -111,27 +113,8 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
                     f.render_widget(input_box, form_chunks[1]);
 
                     // Right Side: Active Users List
-                    let active_title = Span::styled(
-                        format!(" Connected Users ({}) ", history.active_usernames.len()),
-                        Style::default().fg(MOCHA_TEAL).add_modifier(Modifier::BOLD)
-                    );
-                    let mut user_items = Vec::new();
-                    if history.active_usernames.is_empty() {
-                        user_items.push(ListItem::new(Span::styled("No other users online. Be the first to join!", Style::default().fg(MOCHA_SUBTEXT0))));
-                    } else {
-                        for user in &history.active_usernames {
-                            user_items.push(ListItem::new(Line::from(vec![
-                                Span::styled("• ", Style::default().fg(MOCHA_TEAL)),
-                                Span::styled(user, Style::default().fg(MOCHA_TEXT)),
-                            ])));
-                        }
-                    }
-                    let users_list = List::new(user_items)
-                        .block(Block::default()
-                            .title(active_title)
-                            .borders(Borders::ALL)
-                            .border_style(Style::default().fg(MOCHA_SURFACE1))
-                        );
+                    let users_list = ActiveUsersList::new(&history.active_usernames)
+                        .title("Connected Users");
                     f.render_widget(users_list, body_chunks[1]);
 
                     // Footer
@@ -249,29 +232,9 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
                     f.render_stateful_widget(history_list, history_area, &mut state);
 
                     if let Some(area) = users_area {
-                        let active_title = Span::styled(
-                            format!(" Users ({}) ", history.active_usernames.len()),
-                            Style::default().fg(MOCHA_TEAL).add_modifier(Modifier::BOLD)
-                        );
-                        let mut user_items = Vec::new();
-                        for user in &history.active_usernames {
-                            let is_me = history.own_username.as_ref().map_or(false, |own| own == user);
-                            let span_color = if is_me { MOCHA_PEACH } else { MOCHA_TEXT };
-                            let mut line_spans = vec![
-                                Span::styled("• ", Style::default().fg(if is_me { MOCHA_PEACH } else { MOCHA_TEAL })),
-                                Span::styled(user, Style::default().fg(span_color)),
-                            ];
-                            if is_me {
-                                line_spans.push(Span::styled(" (you)", Style::default().fg(MOCHA_SUBTEXT0).add_modifier(Modifier::ITALIC)));
-                            }
-                            user_items.push(ListItem::new(Line::from(line_spans)));
-                        }
-                        let users_list = List::new(user_items)
-                            .block(Block::default()
-                                .title(active_title)
-                                .borders(Borders::ALL)
-                                .border_style(Style::default().fg(MOCHA_SURFACE1))
-                            );
+                        let users_list = ActiveUsersList::new(&history.active_usernames)
+                            .own_username(history.own_username.as_deref())
+                            .title("Users");
                         f.render_widget(users_list, area);
                     }
 
@@ -294,32 +257,7 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
             }
 
             if show_confirm_quit {
-                let area = f.area();
-                let popup_area = centered_rect(46, 8, area);
-                f.render_widget(Clear, popup_area);
-                
-                let popup_block = Block::default()
-                    .title(Span::styled(" Confirm Exit ", Style::default().fg(MOCHA_RED).add_modifier(Modifier::BOLD)))
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(MOCHA_RED));
-                
-                let text = vec![
-                    Line::default(),
-                    Line::from(Span::styled("Are you sure you want to exit?", Style::default().fg(MOCHA_TEXT))),
-                    Line::default(),
-                    Line::from(vec![
-                        Span::styled("  [Y] ", Style::default().fg(MOCHA_GREEN).add_modifier(Modifier::BOLD)),
-                        Span::styled("Yes, Exit   ", Style::default().fg(MOCHA_SUBTEXT0)),
-                        Span::styled("[N] ", Style::default().fg(MOCHA_RED).add_modifier(Modifier::BOLD)),
-                        Span::styled("No, Stay  ", Style::default().fg(MOCHA_SUBTEXT0)),
-                    ]),
-                ];
-                
-                let paragraph = Paragraph::new(text)
-                    .block(popup_block)
-                    .alignment(ratatui::layout::Alignment::Center);
-                
-                f.render_widget(paragraph, popup_area);
+                f.render_widget(ConfirmExitPopup, f.area());
             }
         })?;
         Ok(())
