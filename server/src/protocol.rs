@@ -103,6 +103,8 @@ pub enum Response {
     ActiveUsers { usernames: Vec<String> },
     /// Indicates that a user joined the chat room.
     Joined { username: String },
+    /// Indicates that a user left the chat room.
+    Left { username: String },
     /// Instructs the client to close the connection.
     Disconnect(SocketAddr),
     /// A routed message originating from another peer on the network.

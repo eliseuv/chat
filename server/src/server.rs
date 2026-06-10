@@ -97,7 +97,12 @@ impl Server {
                         }
 
                         Request::Disconnect => {
-                            self.active_users.remove(&client_id);
+                            if let Some(username) = self.active_users.remove(&client_id) {
+                                let left_response = Response::Left {
+                                    username: username.clone(),
+                                };
+                                let _ = self.bcast_tx.send(left_response);
+                            }
 
                             // Broadcast the updated active users list!
                             let active_usernames: Vec<String> = self.active_users.values().cloned().collect();

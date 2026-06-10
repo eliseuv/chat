@@ -18,6 +18,8 @@ pub enum ServerCommand {
     ActiveUsers { usernames: Vec<String> },
     /// Indicates that a user has joined the chat room.
     Joined(String),
+    /// Indicates that a user has left the chat room.
+    Left(String),
     /// Indicates the server is actively dropping the client's connection.
     Disconnect,
 }

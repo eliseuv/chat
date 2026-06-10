@@ -228,6 +228,19 @@ impl Client {
                                     }
                                 }
 
+                                Response::Left { username } => {
+                                    if let Some(ref own_username) = self.username {
+                                        if own_username != &username {
+                                            let remote_msg = ServerMessage::Command(ServerCommand::Left(username));
+                                            let packet = ServerRemotePacket::new(remote_msg);
+                                            if let Err(e) = framed.send(packet).await {
+                                                log::error!("[{client_name}] Failed to send left alert to client: {e}");
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+
                                 Response::Disconnect(client_addr) => {
                                     if client_addr == self.identity.addr {
                                         let remote_msg = ServerMessage::Command(ServerCommand::Disconnect);
