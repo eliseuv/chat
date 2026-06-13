@@ -15,3 +15,6 @@ pub mod remote;
 
 /// Configuration
 pub mod config;
+
+/// Database
+pub mod db;

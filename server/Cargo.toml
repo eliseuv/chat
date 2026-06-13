@@ -35,3 +35,4 @@ chrono = { workspace = true }
 serde = { workspace = true }
 serde_yaml = { workspace = true }
 ciborium = { workspace = true }
+rusqlite = { version = "0.40.1", features = ["bundled"] }

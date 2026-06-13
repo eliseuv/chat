@@ -67,6 +67,8 @@ pub enum Request {
 pub struct ClientRequest {
     /// The unique id of the client that emitted this request.
     pub client_id: u64,
+    /// The address of the client.
+    pub client_addr: SocketAddr,
     /// The underlying action the client wishes to perform.
     pub request: Request,
 }

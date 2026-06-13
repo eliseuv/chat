@@ -4,6 +4,7 @@
 use tokio::sync::{broadcast, mpsc};
 
 use crate::protocol::{ChatMessage, ClientRequest, LoginError, Request, Response};
+use crate::db::Database;
 
 /// Server Core
 #[derive(Debug)]
@@ -14,10 +15,12 @@ pub struct Server {
     bcast_tx: broadcast::Sender<Response>,
     /// Map of active client_id -> username
     active_users: std::collections::HashMap<u64, String>,
+    /// Database connection
+    db: Database,
 }
 
 impl Server {
-    pub fn new(channel_capacity: usize) -> (
+    pub fn new(channel_capacity: usize, db: Database) -> (
         Self,
         mpsc::Sender<ClientRequest>,
         broadcast::Sender<Response>,
@@ -33,6 +36,7 @@ impl Server {
                 req_rx: cmd_rx,
                 bcast_tx: bcast_tx.clone(),
                 active_users: std::collections::HashMap::new(),
+                db,
             },
             cmd_tx,
             bcast_tx,
@@ -47,6 +51,7 @@ impl Server {
             tokio::select! {
                 Some(ClientRequest {
                     client_id,
+                    client_addr,
                     request,
                 }) = self.req_rx.recv() => {
                     match request {
@@ -67,6 +72,11 @@ impl Server {
                                 let _ = self.bcast_tx.send(response);
                             } else {
                                 self.active_users.insert(client_id, username.clone());
+                                
+                                if let Err(e) = self.db.update_login(&username, &client_addr.to_string()) {
+                                    log::error!("Database error updating login for {}: {}", username, e);
+                                }
+
                                 let response = Response::Welcome(client_id);
                                 let _ = self.bcast_tx.send(response);
 
@@ -95,6 +105,10 @@ impl Server {
 
                         Request::Disconnect => {
                             if let Some(username) = self.active_users.remove(&client_id) {
+                                if let Err(e) = self.db.update_logout(&username) {
+                                    log::error!("Database error updating logout for {}: {}", username, e);
+                                }
+
                                 let left_response = Response::Left {
                                     username: username.clone(),
                                 };

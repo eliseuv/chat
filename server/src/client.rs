@@ -37,6 +37,7 @@ impl ClientIdentity {
     pub fn wrap_request(self, request: Request) -> ClientRequest {
         ClientRequest {
             client_id: self.id,
+            client_addr: self.addr,
             request,
         }
     }

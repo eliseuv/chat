@@ -3,7 +3,7 @@ use std::net::{IpAddr, SocketAddr};
 use clap::Parser;
 use tokio::net::TcpListener;
 
-use server::{client::Client, server::Server, config::ServerConfig};
+use server::{client::Client, config::ServerConfig, db::Database, server::Server};
 
 /// Server Command Line Arguments
 #[derive(Parser)]
@@ -43,10 +43,11 @@ async fn main() {
         .await
         .expect("Failed to bind to socket");
 
+    // Initialize database
+    let db = Database::new(&config.database_path).expect("Failed to initialize database");
 
-
-    // Spwan server core
-    let (server, cmd_tx, bcast_tx) = Server::new(config.channel_capacity);
+    // Spawn server core
+    let (server, cmd_tx, bcast_tx) = Server::new(config.channel_capacity, db);
     tokio::spawn(async move {
         server.run().await;
     });
