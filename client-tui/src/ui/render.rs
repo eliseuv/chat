@@ -204,6 +204,7 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
                                         Span::styled("Disconnected.", Style::default().fg(MOCHA_TEXT)),
                                     ]
                                 }
+                                ServerCommand::Ping(_) => continue,
                             },
                             ServerMessage::Chat(ChatMessage {
                                 author_id, author_username, content, ..

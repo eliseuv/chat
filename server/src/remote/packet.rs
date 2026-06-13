@@ -20,6 +20,8 @@ pub enum ServerCommand {
     Joined(String),
     /// Indicates that a user has left the chat room.
     Left(String),
+    /// A ping to measure RTT and keep-alive.
+    Ping(i64),
     /// Indicates the server is actively dropping the client's connection.
     Disconnect,
 }
@@ -59,6 +61,7 @@ impl ServerRemotePacket {
 pub enum ClientMessage {
     Login(String),
     Chat(MessageContent),
+    Pong(i64),
 }
 
 /// The wire-level envelope received by the Server explicitly from the Client.

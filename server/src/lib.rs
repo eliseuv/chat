@@ -12,3 +12,6 @@ pub mod protocol;
 
 /// Remote messages
 pub mod remote;
+
+/// Configuration
+pub mod config;

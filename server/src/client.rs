@@ -42,6 +42,8 @@ impl ClientIdentity {
     }
 }
 
+use crate::config::ServerConfig;
+
 /// Represents a client connection
 #[derive(Debug)]
 pub struct Client {
@@ -54,6 +56,8 @@ pub struct Client {
     pub bcast_rx: broadcast::Receiver<Response>,
     /// Client username chosen on login
     pub username: Option<String>,
+    /// Server config
+    pub config: ServerConfig,
 }
 
 impl Display for Client {
@@ -73,6 +77,7 @@ impl Client {
         stream: TcpStream,
         cmd_tx: mpsc::Sender<ClientRequest>,
         bcast_tx: &broadcast::Sender<Response>,
+        config: ServerConfig,
     ) -> Self {
         Self {
             identity: ClientIdentity {
@@ -83,6 +88,7 @@ impl Client {
             cmd_tx,
             bcast_rx: bcast_tx.subscribe(),
             username: None,
+            config,
         }
     }
 
@@ -94,12 +100,30 @@ impl Client {
             log::error!("[{client_name}] Failed to request initial active users list: {e}");
         }
 
-        let mut framed = Framed::new(self.stream, ServerCodec::new());
+        let mut framed = Framed::new(self.stream, ServerCodec::new(self.config.max_frame_length));
+
+        let mut ping_interval = tokio::time::interval(std::time::Duration::from_secs(self.config.ping_interval_secs));
+        let mut last_seen_message = tokio::time::Instant::now();
+        let timeout_duration = std::time::Duration::from_secs(self.config.timeout_secs);
 
         loop {
             tokio::select! {
+                _ = ping_interval.tick() => {
+                    if last_seen_message.elapsed() > timeout_duration {
+                        log::warn!("[{client_name}] Client timed out (no messages received for > {}s). Disconnecting.", self.config.timeout_secs);
+                        break;
+                    }
+
+                    let ping = ServerRemotePacket::new(ServerMessage::Command(ServerCommand::Ping(Utc::now().timestamp_millis())));
+                    if let Err(e) = framed.send(ping).await {
+                        log::error!("[{client_name}] Failed to send ping: {e}");
+                        break;
+                    }
+                }
+
                 // Read from network socket
                 item = framed.next() => {
+                    last_seen_message = tokio::time::Instant::now();
                     match item {
                         // Connection closed by client
                         None => {
@@ -117,9 +141,6 @@ impl Client {
 
                             // Valid message received
                             Ok(packet) => {
-                                let rtt = Utc::now().timestamp_millis() - packet.timestamp;
-                                log::debug!("[{client_name}] Roundtrip time: {rtt}ms");
-
                                 match packet.message {
                                     ClientMessage::Login(username) => {
                                         if self.username.is_some() {
@@ -157,7 +178,11 @@ impl Client {
                                             log::warn!("[{client_name}] Received Chat message before login; ignoring.");
                                         }
                                     }
+                                ClientMessage::Pong(timestamp) => {
+                                    let rtt = Utc::now().timestamp_millis() - timestamp;
+                                    log::debug!("[{client_name}] Roundtrip time: {rtt}ms");
                                 }
+                            }
                             }
                         }
                     }

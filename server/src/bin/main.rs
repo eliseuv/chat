@@ -1,25 +1,24 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, SocketAddr};
 
 use clap::Parser;
 use tokio::net::TcpListener;
 
-use server::{client::Client, server::Server};
-
-/// Default server address
-const DEFAULT_SERVER_ADDRESS: IpAddr = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
-/// Default server port
-const DEFAULT_SERVER_PORT: u16 = 6969;
+use server::{client::Client, server::Server, config::ServerConfig};
 
 /// Server Command Line Arguments
 #[derive(Parser)]
 struct Args {
     /// Server address
-    #[arg(short, long, default_value_t = DEFAULT_SERVER_ADDRESS)]
-    address: IpAddr,
+    #[arg(short, long)]
+    address: Option<IpAddr>,
 
     /// Server port
-    #[arg(short, long, default_value_t = DEFAULT_SERVER_PORT)]
-    port: u16,
+    #[arg(short, long)]
+    port: Option<u16>,
+
+    /// Config file path
+    #[arg(short, long, default_value = "config.yaml")]
+    config: std::path::PathBuf,
 }
 
 #[tokio::main]
@@ -27,14 +26,27 @@ async fn main() {
     env_logger::init();
     let args = Args::parse();
 
-    let socket = SocketAddr::new(args.address, args.port);
+    let config = if args.config.exists() {
+        let content = std::fs::read_to_string(&args.config).expect("Failed to read config file");
+        serde_yaml::from_str(&content).expect("Failed to parse config file")
+    } else {
+        log::info!("Config file not found, using default configuration");
+        ServerConfig::default()
+    };
+
+    let socket = SocketAddr::new(
+        args.address.unwrap_or(config.address),
+        args.port.unwrap_or(config.port),
+    );
     log::info!("Listening on {}", socket);
     let listener = TcpListener::bind(socket)
         .await
         .expect("Failed to bind to socket");
 
+
+
     // Spwan server core
-    let (server, cmd_tx, bcast_tx) = Server::new();
+    let (server, cmd_tx, bcast_tx) = Server::new(config.channel_capacity);
     tokio::spawn(async move {
         server.run().await;
     });
@@ -46,7 +58,7 @@ async fn main() {
 
             Ok((stream, addr)) => {
                 log::info!("New connection from {}", addr);
-                let client = Client::new(addr, stream, cmd_tx.clone(), &bcast_tx);
+                let client = Client::new(addr, stream, cmd_tx.clone(), &bcast_tx, config.clone());
 
                 // Spawn a new worker task to handle the client connection asynchronously
                 tokio::spawn(async move {

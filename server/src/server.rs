@@ -5,9 +5,6 @@ use tokio::sync::{broadcast, mpsc};
 
 use crate::protocol::{ChatMessage, ClientRequest, LoginError, Request, Response};
 
-/// Channel size
-pub const CHANNEL_CAPACITY: usize = 32;
-
 /// Server Core
 #[derive(Debug)]
 pub struct Server {
@@ -20,16 +17,16 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn new() -> (
+    pub fn new(channel_capacity: usize) -> (
         Self,
         mpsc::Sender<ClientRequest>,
         broadcast::Sender<Response>,
     ) {
         // MPSC Channel: Clients -> Server
-        let (cmd_tx, cmd_rx) = mpsc::channel(CHANNEL_CAPACITY);
+        let (cmd_tx, cmd_rx) = mpsc::channel(channel_capacity);
 
         // Broadcast Channel: Server -> Clients
-        let (bcast_tx, _) = broadcast::channel(CHANNEL_CAPACITY);
+        let (bcast_tx, _) = broadcast::channel(channel_capacity);
 
         (
             Self {

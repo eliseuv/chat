@@ -176,9 +176,6 @@ impl ChatApp {
                                     },
 
                                     Ok(packet) => {
-                                        let rtt = Utc::now().timestamp_millis() - packet.timestamp;
-                                        log::debug!("Roundtrip time: {rtt}ms");
-
                                         if let ServerMessage::Command(cmd) = &packet.message {
                                             match cmd {
                                                 ServerCommand::Welcome(id) => {
@@ -195,7 +192,17 @@ impl ChatApp {
                                                 }
                                                 ServerCommand::Joined(_) => {}
                                                 ServerCommand::Left(_) => {}
-                                                _ => {}
+                                                ServerCommand::Ping(timestamp) => {
+                                                    let response = ClientRemotePacket {
+                                                        timestamp: Utc::now().timestamp_millis(),
+                                                        message: ClientMessage::Pong(*timestamp),
+                                                    };
+                                                    if let Err(e) = self.framed_connection.send(response).await {
+                                                        log::error!("Failed to send pong: {e}");
+                                                    }
+                                                    continue;
+                                                }
+                                                ServerCommand::Disconnect => {}
                                             }
                                         }
 

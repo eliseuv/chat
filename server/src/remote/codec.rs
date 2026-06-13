@@ -7,8 +7,6 @@ use tokio_util::{
     codec::{Decoder, Encoder, LengthDelimitedCodec},
 };
 
-/// Maximum frame length to avoid DoS by OOM
-const MAX_FRAME_LENGTH: usize = 1024 * 1024;
 
 /// A bipartite serialization/deserialization codec for framing TCP streams.
 ///
@@ -28,9 +26,9 @@ pub struct RemotePacketCodec<In, Out> {
 
 impl<In, Out> RemotePacketCodec<In, Out> {
     /// Creates a fresh codec engine equipped with a default length-delimited framer.
-    pub fn new() -> Self {
+    pub fn new(max_frame_length: usize) -> Self {
         let framer = LengthDelimitedCodec::builder()
-            .max_frame_length(MAX_FRAME_LENGTH)
+            .max_frame_length(max_frame_length)
             .new_codec();
         Self {
             framer,
@@ -41,7 +39,7 @@ impl<In, Out> RemotePacketCodec<In, Out> {
 
 impl<In, Out> Default for RemotePacketCodec<In, Out> {
     fn default() -> Self {
-        Self::new()
+        Self::new(1024 * 1024)
     }
 }
 
