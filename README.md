@@ -23,16 +23,16 @@ Whenever a user establishes a new TCP connection, the system immediately offload
 ## Future Features
 
 ### User Identity & Moderation
-- **Authentication & Profiles:** Introduce a secure login system requiring credentials to protect user accounts, and allow users to define their own unique custom usernames.
-- **Moderation Tools:** Provide the ability to ban or blacklist malicious users to restrict them from accessing the server or participating in the chat.
+- [x] **Authentication & Profiles:** Introduce a secure login system allowing users to define their own unique custom usernames.
+- [ ] **Moderation Tools:** Provide the ability to ban or blacklist malicious users to restrict them from accessing the server or participating in the chat.
 
 ### Enhanced Messaging
-- **Direct & Group Chats:** Enable secure, one-on-one private messaging and the ability to create isolated group chat rooms for specific topics or invited users.
-- **Targeted Notifications:** Implement the ability to direct messages or alerts specifically to certain users, ensuring they are notified even in busy channels.
+- [ ] **Direct & Group Chats:** Enable secure, one-on-one private messaging and the ability to create isolated group chat rooms for specific topics or invited users.
+- [x] **Targeted Notifications:** Implement the ability to direct messages or alerts specifically to certain users, ensuring they are notified even in busy channels.
 
 ### Data & Media
-- **Chat History:** Store message logs securely on the backend so users can access past conversations and catch up on missed messages after reconnecting.
-- **File Sharing:** Support the uploading and distribution of binary files, such as images or documents, directly through the chat interface.
+- [ ] **Chat History:** Store message logs securely on the backend so users can access past conversations and catch up on missed messages after reconnecting.
+- [ ] **File Sharing:** Support the uploading and distribution of binary files, such as images or documents, directly through the chat interface.
 
 ## Chat Protocol Definition
 
@@ -42,8 +42,8 @@ This document describes the messaging protocol used between our client applicati
 ### Architecture
 
 The networking interface relies on two distinct code boundaries:
-- `protocol.rs`: Logical constructs encapsulating application interactions (e.g., `ChatMessage`, `MessageDestination`, `Request`).
-- `remote.rs`: Concrete wire formats (`ClientRemotePacket`, `ServerRemotePacket`) and streaming utilities (`RemotePacketCodec`).
+- `protocol.rs`: Logical constructs encapsulating application interactions (e.g., `ChatMessage`, `MessageDestination`, `MessageContent`, `LoginError`).
+- `remote/packet.rs`: Concrete wire formats (`ClientRemotePacket`, `ServerRemotePacket`, `ClientMessage`, `ServerMessage`, `ServerCommand`).
 
 #### Message Flow Architecture
 
@@ -109,12 +109,17 @@ classDiagram
     }
     class ServerMessage {
       <<enumeration>>
-      Command
-      Chat
+      Command(ServerCommand)
+      Chat(ChatMessage)
     }
     class ServerCommand {
       <<enumeration>>
       Welcome(u64)
+      LoginError(LoginError)
+      ActiveUsers(Vec~String~)
+      Joined(String)
+      Left(String)
+      Ping(i64)
       Disconnect
     }
     class ChatMessage {
@@ -122,25 +127,38 @@ classDiagram
       +MessageDestination destination
       +MessageContent content
     }
+    class MessageDestination {
+      <<enumeration>>
+      AllUsers
+      TargetedUser(String)
+    }
     ServerRemotePacket *-- ServerMessage
     ServerMessage o-- ServerCommand
     ServerMessage o-- ChatMessage
+    ChatMessage *-- MessageDestination
 ```
 
 ##### Client-to-Server Publishing
-Clients have a constrained communication pipeline, only capable of pushing base `MessageContent`. It relies on the server to append proper origin identities upon broadcasting.
+Clients have a constrained communication pipeline. They can login, send chat messages, or answer pings. It relies on the server to append proper origin identities upon broadcasting.
 
 ```mermaid
 classDiagram
     class ClientRemotePacket {
       +i64 timestamp
-      +MessageContent message_content
+      +ClientMessage message
+    }
+    class ClientMessage {
+      <<enumeration>>
+      Login(String)
+      Chat(MessageContent)
+      Pong(i64)
     }
     class MessageContent {
         <<enumeration>>
         Text(String)
     }
-    ClientRemotePacket *-- MessageContent
+    ClientRemotePacket *-- ClientMessage
+    ClientMessage *-- MessageContent
 ```
 
 ### Typical Connection Lifecycle
