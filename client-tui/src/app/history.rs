@@ -1,11 +1,10 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local};
 use server::remote;
 use server::protocol::LoginError;
 
 #[derive(Debug)]
 pub struct ReceivedMessage {
-    // TODO: Use local time
-    pub datetime: DateTime<Utc>,
+    pub datetime: DateTime<Local>,
     pub message: remote::packet::ServerMessage,
 }
 

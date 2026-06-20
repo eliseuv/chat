@@ -1,4 +1,4 @@
-use crate::ui::{AppEvent, UiEventStream};
+use crate::ui::UiEventStream;
 use anyhow::Context;
 use chrono::{DateTime, Utc};
 use futures::{SinkExt, StreamExt};
@@ -9,24 +9,19 @@ use std::io;
 use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
 
-use crate::history::{ChatHistory, ReceivedMessage};
+use crate::app::history::{ChatHistory, ReceivedMessage};
+use crate::app::state::State;
 use crate::ui::ChatInterface;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum State {
-    Quit,
-    Login,
-    ChatRoom,
-}
 
 /// Chat Application
 pub struct ChatApp {
-    state: State,
-    framed_connection: Framed<TcpStream, ClientCodec>,
-    input_buffer: String,
-    history: ChatHistory,
-    interface: ChatInterface<io::Stdout>,
-    is_confirming_quit: bool,
+    pub(crate) state: State,
+    pub(crate) framed_connection: Framed<TcpStream, ClientCodec>,
+    pub(crate) input_buffer: String,
+    pub(crate) history: ChatHistory,
+    pub(crate) interface: ChatInterface<io::Stdout>,
+    pub(crate) is_confirming_quit: bool,
+    pub(crate) autocomplete_state: Option<(String, usize, usize)>,
 }
 
 impl ChatApp {
@@ -44,6 +39,7 @@ impl ChatApp {
             },
             interface: ChatInterface::new(io::stdout())?,
             is_confirming_quit: false,
+            autocomplete_state: None,
         })
     }
 
@@ -73,72 +69,6 @@ impl ChatApp {
 
     pub fn draw(&mut self) -> anyhow::Result<()> {
         self.interface.draw(self.state, &self.history, &self.input_buffer, self.is_confirming_quit)
-    }
-
-    async fn handle_event(&mut self, event: AppEvent) -> anyhow::Result<()> {
-        if self.is_confirming_quit {
-            match event {
-                AppEvent::InputChar('y') | AppEvent::InputChar('Y') => {
-                    self.state = State::Quit;
-                }
-                AppEvent::InputChar('n') | AppEvent::InputChar('N') | AppEvent::Cancel => {
-                    self.is_confirming_quit = false;
-                    self.draw()?;
-                }
-                AppEvent::Resize => {
-                    self.draw()?;
-                }
-                _ => {}
-            }
-            return Ok(());
-        }
-
-        match event {
-            AppEvent::None => {}
-
-            AppEvent::Quit => {
-                self.is_confirming_quit = true;
-                self.draw()?;
-            }
-
-            AppEvent::Cancel => {}
-
-            AppEvent::InputChar(c) => {
-                self.input_buffer.push(c);
-                self.draw()?;
-            }
-
-            AppEvent::Backspace => {
-                self.input_buffer.pop();
-                self.draw()?;
-            }
-
-            AppEvent::Enter => {
-                if !self.input_buffer.is_empty() {
-                    let text = std::mem::take(&mut self.input_buffer);
-                    match self.state {
-                        State::Login => {
-                            self.history.own_username = Some(text.clone());
-                            if let Err(e) = self.send_login(text).await {
-                                log::error!("Failed to send login: {}", e);
-                            }
-                        }
-                        State::ChatRoom => {
-                            if let Err(e) = self.send_message(MessageContent::Text(text)).await {
-                                log::error!("Failed to send message: {}", e);
-                            }
-                        }
-                        _ => {}
-                    }
-                    self.draw()?;
-                }
-            }
-
-            AppEvent::Resize => {
-                self.draw()?;
-            }
-        }
-        Ok(())
     }
 
     pub async fn run(&mut self) -> anyhow::Result<()> {
@@ -208,7 +138,7 @@ impl ChatApp {
 
                                         self.history.messages.push(ReceivedMessage {
                                             datetime: DateTime::<Utc>::from_timestamp_millis(packet.timestamp)
-                                                .context("Unable to parse timestamp")?,
+                                                .context("Unable to parse timestamp")?.with_timezone(&chrono::Local),
                                             message: packet.message,
                                         });
                                         self.draw()?;
