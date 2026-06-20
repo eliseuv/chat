@@ -20,6 +20,8 @@ pub enum AppEvent {
     Enter,
     /// A terminal resize event requiring a UI redraw.
     Resize,
+    /// A tab keystroke for autocompletion.
+    Tab,
 }
 
 /// A stream wrapper that reads raw terminal events and translates them into `AppEvent`s.
@@ -56,6 +58,7 @@ impl UiEventStream {
                                 KeyCode::Backspace => AppEvent::Backspace,
                                 KeyCode::Enter => AppEvent::Enter,
                                 KeyCode::Esc => AppEvent::Cancel,
+                                KeyCode::Tab => AppEvent::Tab,
                                 _ => AppEvent::None,
                             }
                         };

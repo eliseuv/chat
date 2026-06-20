@@ -1,6 +1,6 @@
-use crate::history::ChatHistory;
+use crate::app::history::ChatHistory;
 use crate::app::State;
-use crate::ui::theme::*;
+use crate::ui::theme::active_theme::*;
 use crate::ui::layout::make_keybindings_footer;
 use crate::ui::prompt::InputPrompt;
 use crate::ui::users_list::ActiveUsersList;
@@ -72,7 +72,7 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
                     // Top Banner (ASCII Art with padding from client-tui/assets/title.txt)
                     let mut ascii_lines = vec![Line::default()]; // Top padding
                     for line in include_str!("../../assets/title.txt").lines() {
-                        ascii_lines.push(Line::from(Span::styled(line, Style::default().fg(MOCHA_MAUVE))));
+                        ascii_lines.push(Line::from(Span::styled(line, Style::default().fg(MAUVE))));
                     }
                     ascii_lines.push(Line::default()); // Bottom padding
                     let title = Paragraph::new(ascii_lines)
@@ -100,16 +100,16 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
                         .split(body_chunks[0]);
 
                     let prompt_span = if let Some(ref err) = history.login_error {
-                        Span::styled(format!("✗ Error: {}", err), Style::default().fg(MOCHA_RED).add_modifier(Modifier::BOLD))
+                        Span::styled(format!("✗ Error: {}", err), Style::default().fg(RED).add_modifier(Modifier::BOLD))
                     } else {
-                        Span::styled("▶ Enter a unique username to join:", Style::default().fg(MOCHA_GREEN))
+                        Span::styled("▶ Enter a unique username to join:", Style::default().fg(GREEN))
                     };
                     let instructions = Paragraph::new(vec![Line::from(prompt_span)])
                         .block(Block::default().borders(Borders::NONE));
                     f.render_widget(instructions, form_chunks[0]);
 
                     let input_box = InputPrompt::new(input_buffer)
-                        .title(Span::styled(" Choose Username ", Style::default().fg(MOCHA_PEACH).add_modifier(Modifier::BOLD)));
+                        .title(Span::styled(" Choose Username ", Style::default().fg(PEACH).add_modifier(Modifier::BOLD)));
                     f.render_widget(input_box, form_chunks[1]);
 
                     // Right Side: Active Users List
@@ -119,8 +119,8 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
 
                     // Footer
                     let footer = Paragraph::new(make_keybindings_footer(&[
-                        ("Enter", "join", MOCHA_PEACH),
-                        ("Ctrl+Q", "quit", MOCHA_RED),
+                        ("Enter", "join", PEACH),
+                        ("Ctrl+Q", "quit", RED),
                     ]))
                     .alignment(ratatui::layout::Alignment::Center);
                     f.render_widget(footer, main_chunks[2]);
@@ -157,52 +157,51 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
                     for msg in &history.messages {
                         let time_str = msg
                             .datetime
-                            .with_timezone(&chrono::Local)
                             .format("%H:%M:%S");
 
-                        let spans = match &msg.message {
+                        let (spans, is_mentioned) = match &msg.message {
                             ServerMessage::Command(s) => match s {
                                 ServerCommand::Welcome(_id) => {
                                     let username_str = history.own_username.as_deref().unwrap_or("You");
-                                    vec![
-                                        Span::styled(format!("[{}] ", time_str), Style::default().fg(MOCHA_OVERLAY0)),
-                                        Span::styled("[SERVER]: ", Style::default().fg(MOCHA_YELLOW).add_modifier(Modifier::BOLD)),
-                                        Span::styled("Welcome to the chat! You are ", Style::default().fg(MOCHA_TEXT)),
-                                        Span::styled(username_str, Style::default().fg(MOCHA_PEACH).add_modifier(Modifier::BOLD)),
-                                    ]
+                                    (vec![
+                                        Span::styled(format!("[{}] ", time_str), Style::default().fg(OVERLAY0)),
+                                        Span::styled("[SERVER]: ", Style::default().fg(YELLOW).add_modifier(Modifier::BOLD)),
+                                        Span::styled("Welcome to the chat! You are ", Style::default().fg(TEXT)),
+                                        Span::styled(username_str, Style::default().fg(PEACH).add_modifier(Modifier::BOLD)),
+                                    ], false)
                                 }
                                 ServerCommand::LoginError(reason) => {
-                                    vec![
-                                        Span::styled(format!("[{}] ", time_str), Style::default().fg(MOCHA_OVERLAY0)),
-                                        Span::styled("[SERVER ERROR]: ", Style::default().fg(MOCHA_RED).add_modifier(Modifier::BOLD)),
-                                        Span::styled(reason.to_string(), Style::default().fg(MOCHA_TEXT)),
-                                    ]
+                                    (vec![
+                                        Span::styled(format!("[{}] ", time_str), Style::default().fg(OVERLAY0)),
+                                        Span::styled("[SERVER ERROR]: ", Style::default().fg(RED).add_modifier(Modifier::BOLD)),
+                                        Span::styled(reason.to_string(), Style::default().fg(TEXT)),
+                                    ], false)
                                 }
                                 ServerCommand::ActiveUsers { .. } => {
                                     continue;
                                 }
                                 ServerCommand::Joined(username) => {
-                                    vec![
-                                        Span::styled(format!("[{}] ", time_str), Style::default().fg(MOCHA_OVERLAY0)),
-                                        Span::styled("[SERVER]: ", Style::default().fg(MOCHA_YELLOW).add_modifier(Modifier::BOLD)),
-                                        Span::styled(username.clone(), Style::default().fg(MOCHA_TEAL).add_modifier(Modifier::BOLD)),
-                                        Span::styled(" joined the chat!", Style::default().fg(MOCHA_TEXT)),
-                                    ]
+                                    (vec![
+                                        Span::styled(format!("[{}] ", time_str), Style::default().fg(OVERLAY0)),
+                                        Span::styled("[SERVER]: ", Style::default().fg(YELLOW).add_modifier(Modifier::BOLD)),
+                                        Span::styled(username.clone(), Style::default().fg(TEAL).add_modifier(Modifier::BOLD)),
+                                        Span::styled(" joined the chat!", Style::default().fg(TEXT)),
+                                    ], false)
                                 }
                                 ServerCommand::Left(username) => {
-                                    vec![
-                                        Span::styled(format!("[{}] ", time_str), Style::default().fg(MOCHA_OVERLAY0)),
-                                        Span::styled("[SERVER]: ", Style::default().fg(MOCHA_YELLOW).add_modifier(Modifier::BOLD)),
-                                        Span::styled(username.clone(), Style::default().fg(MOCHA_TEAL).add_modifier(Modifier::BOLD)),
-                                        Span::styled(" left the chat.", Style::default().fg(MOCHA_TEXT)),
-                                    ]
+                                    (vec![
+                                        Span::styled(format!("[{}] ", time_str), Style::default().fg(OVERLAY0)),
+                                        Span::styled("[SERVER]: ", Style::default().fg(YELLOW).add_modifier(Modifier::BOLD)),
+                                        Span::styled(username.clone(), Style::default().fg(TEAL).add_modifier(Modifier::BOLD)),
+                                        Span::styled(" left the chat.", Style::default().fg(TEXT)),
+                                    ], false)
                                 }
                                 ServerCommand::Disconnect => {
-                                    vec![
-                                        Span::styled(format!("[{}] ", time_str), Style::default().fg(MOCHA_OVERLAY0)),
-                                        Span::styled("[SERVER]: ", Style::default().fg(MOCHA_YELLOW).add_modifier(Modifier::BOLD)),
-                                        Span::styled("Disconnected.", Style::default().fg(MOCHA_TEXT)),
-                                    ]
+                                    (vec![
+                                        Span::styled(format!("[{}] ", time_str), Style::default().fg(OVERLAY0)),
+                                        Span::styled("[SERVER]: ", Style::default().fg(YELLOW).add_modifier(Modifier::BOLD)),
+                                        Span::styled("Disconnected.", Style::default().fg(TEXT)),
+                                    ], false)
                                 }
                                 ServerCommand::Ping(_) => continue,
                             },
@@ -213,18 +212,62 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
                                     MessageContent::Text(t) => t.clone(),
                                 };
                                 let (sender_name, sender_color) = if Some(*author_id) == history.own_id {
-                                    ("You".to_string(), MOCHA_PEACH)
+                                    ("You".to_string(), PEACH)
                                 } else {
-                                    (author_username.clone(), MOCHA_TEAL)
+                                    (author_username.clone(), TEAL)
                                 };
-                                vec![
-                                    Span::styled(format!("[{}] ", time_str), Style::default().fg(MOCHA_OVERLAY0)),
+                                let mut spans = vec![
+                                    Span::styled(format!("[{}] ", time_str), Style::default().fg(OVERLAY0)),
                                     Span::styled(format!("[{}]: ", sender_name), Style::default().fg(sender_color).add_modifier(Modifier::BOLD)),
-                                    Span::styled(content_str, Style::default().fg(MOCHA_TEXT)),
-                                ]
+                                ];
+
+                                let mut remaining = content_str.as_str();
+                                let mut mentioned = false;
+                                while let Some(idx) = remaining.find('@') {
+                                    if idx > 0 {
+                                        spans.push(Span::styled(remaining[..idx].to_string(), Style::default().fg(TEXT)));
+                                    }
+                                    remaining = &remaining[idx..];
+                                    
+                                    let end_idx = remaining[1..]
+                                        .find(|c: char| !c.is_alphanumeric() && c != '_')
+                                        .map(|i| i + 1)
+                                        .unwrap_or(remaining.len());
+
+                                    if end_idx > 1 {
+                                        let username = &remaining[1..end_idx];
+                                        let is_own = Some(username) == history.own_username.as_deref();
+                                        let is_active = history.active_usernames.iter().any(|u| u == username);
+
+                                        let style = if is_own {
+                                            mentioned = true;
+                                            Style::default().fg(YELLOW).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+                                        } else if is_active {
+                                            Style::default().fg(BLUE).add_modifier(Modifier::BOLD)
+                                        } else {
+                                            Style::default().fg(TEXT)
+                                        };
+
+                                        spans.push(Span::styled(remaining[..end_idx].to_string(), style));
+                                        remaining = &remaining[end_idx..];
+                                    } else {
+                                        spans.push(Span::styled("@", Style::default().fg(TEXT)));
+                                        remaining = &remaining[1..];
+                                    }
+                                }
+                                if !remaining.is_empty() {
+                                    spans.push(Span::styled(remaining.to_string(), Style::default().fg(TEXT)));
+                                }
+
+                                (spans, mentioned)
                             }
                         };
-                        list_items.push(ListItem::new(Line::from(spans)));
+                        
+                        let mut list_item = ListItem::new(Line::from(spans));
+                        if is_mentioned {
+                            list_item = list_item.style(Style::default().bg(SURFACE0));
+                        }
+                        list_items.push(list_item);
                     }
 
                     let mut state = ListState::default();
@@ -235,7 +278,7 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
                     let history_list = List::new(list_items)
                         .block(Block::default()
                             .borders(Borders::ALL)
-                            .border_style(Style::default().fg(MOCHA_SURFACE1))
+                            .border_style(Style::default().fg(SURFACE1))
                         );
 
                     f.render_stateful_widget(history_list, history_area, &mut state);
@@ -248,7 +291,7 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
                     }
 
                     let header = Paragraph::new(Line::from(vec![
-                        Span::styled(" CHAT CAFE", Style::default().fg(MOCHA_MAUVE).add_modifier(Modifier::BOLD)),
+                        Span::styled(" CHAT CAFE", Style::default().fg(MAUVE).add_modifier(Modifier::BOLD)),
                     ]))
                     .alignment(ratatui::layout::Alignment::Left);
                     f.render_widget(header, chunks[0]);
@@ -256,8 +299,8 @@ impl<O: io::Write + ratatui::crossterm::QueueableCommand + IsTty> ChatInterface<
                     f.render_widget(prompt_widget, chunks[2]);
 
                     let footer = Paragraph::new(make_keybindings_footer(&[
-                        ("Enter", "send", MOCHA_PEACH),
-                        ("Ctrl+Q", "exit", MOCHA_RED),
+                        ("Enter", "send", PEACH),
+                        ("Ctrl+Q", "exit", RED),
                     ]))
                     .alignment(ratatui::layout::Alignment::Center);
                     f.render_widget(footer, chunks[3]);
