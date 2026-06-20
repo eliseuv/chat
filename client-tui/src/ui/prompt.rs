@@ -1,4 +1,4 @@
-use crate::ui::theme::{MOCHA_SURFACE1, MOCHA_TEXT};
+use crate::ui::theme::active_theme::*;
 use crate::ui::layout::wrap_text;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -40,7 +40,7 @@ impl<'a> Widget for InputPrompt<'a> {
 
         let mut block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(MOCHA_SURFACE1));
+            .border_style(Style::default().fg(SURFACE1));
 
         if let Some(t) = self.title {
             block = block.title(t);
@@ -48,7 +48,7 @@ impl<'a> Widget for InputPrompt<'a> {
 
         Paragraph::new(wrapped_prompt)
             .block(block)
-            .style(Style::default().fg(MOCHA_TEXT))
+            .style(Style::default().fg(TEXT))
             .render(area, buf);
     }
 }

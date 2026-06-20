@@ -1,5 +1,5 @@
 use crate::ui::layout::centered_rect;
-use crate::ui::theme::{MOCHA_GREEN, MOCHA_RED, MOCHA_SUBTEXT0, MOCHA_TEXT};
+use crate::ui::theme::active_theme::*;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
@@ -16,29 +16,29 @@ impl Widget for ConfirmExitPopup {
         let popup_block = Block::default()
             .title(Span::styled(
                 " Confirm Exit ",
-                Style::default().fg(MOCHA_RED).add_modifier(Modifier::BOLD),
+                Style::default().fg(RED).add_modifier(Modifier::BOLD),
             ))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(MOCHA_RED));
+            .border_style(Style::default().fg(RED));
 
         let text = vec![
             Line::default(),
             Line::from(Span::styled(
                 "Are you sure you want to exit?",
-                Style::default().fg(MOCHA_TEXT),
+                Style::default().fg(TEXT),
             )),
             Line::default(),
             Line::from(vec![
                 Span::styled(
                     "  [Y] ",
-                    Style::default().fg(MOCHA_GREEN).add_modifier(Modifier::BOLD),
+                    Style::default().fg(GREEN).add_modifier(Modifier::BOLD),
                 ),
-                Span::styled("Yes, Exit   ", Style::default().fg(MOCHA_SUBTEXT0)),
+                Span::styled("Yes, Exit   ", Style::default().fg(SUBTEXT0)),
                 Span::styled(
                     "[N] ",
-                    Style::default().fg(MOCHA_RED).add_modifier(Modifier::BOLD),
+                    Style::default().fg(RED).add_modifier(Modifier::BOLD),
                 ),
-                Span::styled("No, Stay  ", Style::default().fg(MOCHA_SUBTEXT0)),
+                Span::styled("No, Stay  ", Style::default().fg(SUBTEXT0)),
             ]),
         ];
 

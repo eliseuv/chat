@@ -1,7 +1,7 @@
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use crate::ui::theme::MOCHA_SUBTEXT0;
+use crate::ui::theme::active_theme::*;
 
 /// Simulates word wrapping on the input buffer and returns the wrapped string and line count.
 pub fn wrap_text(text: &str, max_width: usize) -> (String, usize) {
@@ -113,10 +113,10 @@ pub fn make_keybindings_footer<'a>(bindings: &[(&'a str, &'a str, Color)]) -> Li
     let mut spans = Vec::new();
     for (i, &(key, desc, color)) in bindings.iter().enumerate() {
         if i > 0 {
-            spans.push(Span::styled("  |  ", Style::default().fg(MOCHA_SUBTEXT0)));
+            spans.push(Span::styled("  |  ", Style::default().fg(SUBTEXT0)));
         }
         spans.push(Span::styled(key, Style::default().fg(color).add_modifier(Modifier::BOLD)));
-        spans.push(Span::styled(format!(" {}", desc), Style::default().fg(MOCHA_SUBTEXT0)));
+        spans.push(Span::styled(format!(" {}", desc), Style::default().fg(SUBTEXT0)));
     }
     Line::from(spans)
 }
