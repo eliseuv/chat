@@ -17,7 +17,9 @@ async fn test_join_alert() {
     let local_addr = listener.local_addr().unwrap();
 
     // 2. Start the server core
-    let (server, cmd_tx, bcast_tx) = ChatServer::new();
+    let config = server::config::ServerConfig::default();
+    let db = server::db::Database::new(":memory:").unwrap();
+    let (server, cmd_tx, bcast_tx) = ChatServer::new(config.channel_capacity, db);
     tokio::spawn(async move {
         server.run().await;
     });
@@ -25,9 +27,10 @@ async fn test_join_alert() {
     // 3. Start listener accept loop in the background
     let cmd_tx_clone = cmd_tx.clone();
     let bcast_tx_clone = bcast_tx.clone();
+    let config_loop = config.clone();
     tokio::spawn(async move {
         while let Ok((stream, addr)) = listener.accept().await {
-            let client = ServerClient::new(addr, stream, cmd_tx_clone.clone(), &bcast_tx_clone);
+            let client = ServerClient::new(addr, stream, cmd_tx_clone.clone(), &bcast_tx_clone, config_loop.clone());
             tokio::spawn(async move {
                 let _ = client.run().await;
             });
@@ -36,7 +39,7 @@ async fn test_join_alert() {
 
     // 4. Connect Client A (Alice)
     let stream_a = TcpStream::connect(local_addr).await.unwrap();
-    let mut client_a = Framed::new(stream_a, ClientCodec::new());
+    let mut client_a = Framed::new(stream_a, ClientCodec::default());
 
     // Alice immediately receives ActiveUsers [] upon connecting
     let packet = client_a.next().await.unwrap().unwrap();
@@ -72,7 +75,7 @@ async fn test_join_alert() {
 
     // 5. Connect Client B (Bob)
     let stream_b = TcpStream::connect(local_addr).await.unwrap();
-    let mut client_b = Framed::new(stream_b, ClientCodec::new());
+    let mut client_b = Framed::new(stream_b, ClientCodec::default());
 
     // On Bob connect, a broadcast of ActiveUsers ["alice"] is sent.
     // So both Alice and Bob receive it.

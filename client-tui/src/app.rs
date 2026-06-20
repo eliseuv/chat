@@ -33,7 +33,7 @@ impl ChatApp {
     pub fn new(stream: TcpStream) -> anyhow::Result<Self> {
         Ok(Self {
             state: State::Login,
-            framed_connection: Framed::new(stream, ClientCodec::new()),
+            framed_connection: Framed::new(stream, ClientCodec::default()),
             input_buffer: String::new(),
             history: ChatHistory {
                 messages: Vec::new(),
