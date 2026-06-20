@@ -9,6 +9,9 @@ pub struct Database {
 
 impl Database {
     pub fn new(path: &str) -> Result<Self> {
+        if let Some(parent) = std::path::Path::new(path).parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
         let conn = Connection::open(path)?;
         
         conn.execute(
