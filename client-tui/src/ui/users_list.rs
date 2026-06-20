@@ -46,7 +46,7 @@ impl<'a> Widget for ActiveUsersList<'a> {
             )));
         } else {
             for user in self.active_usernames {
-                let is_me = self.own_username.map_or(false, |own| own == user);
+                let is_me = self.own_username.is_some_and(|own| own == user);
                 let span_color = if is_me { PEACH } else { TEXT };
                 let mut line_spans = vec![
                     Span::styled(

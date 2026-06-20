@@ -127,7 +127,7 @@ async fn main() -> anyhow::Result<()> {
         match tokio::net::lookup_host(&host_port).await {
             Ok(mut addrs) => {
                 let mut connected = None;
-                while let Some(addr) = addrs.next() {
+                for addr in addrs.by_ref() {
                     match TcpStream::connect(addr).await {
                         Ok(stream) => {
                             connected = Some(stream);
