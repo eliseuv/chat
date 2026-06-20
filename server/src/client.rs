@@ -281,7 +281,8 @@ impl Client {
                                 }
 
                                 Response::Message(chat_message) => {
-                                    match chat_message.destination {
+                                    let dest = chat_message.destination.clone();
+                                    match dest {
                                         MessageDestination::AllUsers => {
                                             if self.username.is_some() {
                                                 let remote_msg = ServerMessage::Chat(chat_message);
@@ -289,6 +290,18 @@ impl Client {
                                                 if let Err(e) = framed.send(packet).await {
                                                     log::error!("[{client_name}] Failed to send message to client: {e}");
                                                     break;
+                                                }
+                                            }
+                                        }
+                                        MessageDestination::TargetedUser(target_username) => {
+                                            if let Some(ref username) = self.username {
+                                                if username == &target_username || chat_message.author_id == self.identity.id {
+                                                    let remote_msg = ServerMessage::Chat(chat_message);
+                                                    let packet = ServerRemotePacket::new(remote_msg);
+                                                    if let Err(e) = framed.send(packet).await {
+                                                        log::error!("[{client_name}] Failed to send targeted message to client: {e}");
+                                                        break;
+                                                    }
                                                 }
                                             }
                                         }

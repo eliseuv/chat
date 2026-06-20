@@ -11,13 +11,12 @@ use serde::{Deserialize, Serialize};
 /// Message destination.
 ///
 /// Dictates the target audience for a specific broadcast or message mechanism.
-/// For now, only broadcast messages are supported, but targeted messages
-/// will be implemented in the future.
-/// TODO: Targeted messages
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MessageDestination {
     /// Broadcast the message to all currently connected clients.
     AllUsers,
+    /// Targeted message for a specific user.
+    TargetedUser(String),
 }
 
 /// Message content
